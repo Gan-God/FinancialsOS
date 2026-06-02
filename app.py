@@ -2,19 +2,24 @@ import streamlit as st
 import pandas as pd
 from market_feed import MarketEngine
 from calculus_engine import FIREEngine
+import portfolio_db
 
-# Set up the dashboard layout
+# ---------------------------------------------------------
+# INITIALIZATION & CACHING
+# ---------------------------------------------------------
 st.set_page_config(page_title="Infinite Horizon Engine", layout="wide")
 
-# ---------------------------------------------------------
-# CACHED DATA INITIALIZATION
-# ---------------------------------------------------------
+# Initialize the SQLite database on startup
+portfolio_db.init_db()
+
 @st.cache_resource
 def get_market_engine():
-    """Instantiate the market engine once per session to utilize its internal JSON cache."""
     return MarketEngine()
 
 market_engine = get_market_engine()
+
+# Fetch portfolio dynamically from SQLite
+portfolio_data = portfolio_db.get_all_assets()
 
 # ---------------------------------------------------------
 # SIDEBAR: SYSTEM PARAMETERS
@@ -31,12 +36,32 @@ inflation_rate = st.sidebar.slider("Real Inflation / Currency Decay (%)", 0.0, 1
 step_up_rate = st.sidebar.slider("Annual SIP Step-Up Rate (%)", 0.0, 25.0, 10.0, 1.0)
 
 # ---------------------------------------------------------
-# ASSET STORE (Edit this list to match your actual holdings)
+# SIDEBAR: PORTFOLIO MANAGER (SQLITE UI)
 # ---------------------------------------------------------
-portfolio_data = [
-    {"type": "MF", "code": "120503", "units": 4500.50},    # Axis ELSS
-    {"type": "Stock", "code": "NIFTYBEES.NS", "units": 1200} # Nippon Nifty 50
-]
+st.sidebar.markdown("---")
+st.sidebar.header("⚙️ Portfolio Manager")
+
+with st.sidebar.expander("➕ Add / Update Asset", expanded=False):
+    with st.form("add_asset_form", clear_on_submit=True):
+        asset_type = st.selectbox("Asset Type", ["MF", "Stock"])
+        asset_code = st.text_input("Ticker / AMFI Code", help="e.g., '120503' or 'RELIANCE.NS'")
+        asset_units = st.number_input("Units Held", min_value=0.0, format="%.4f")
+        
+        if st.form_submit_button("Save Asset"):
+            if asset_code:
+                portfolio_db.add_or_update_asset(asset_type, asset_code.strip(), asset_units)
+                st.success(f"Added {asset_code}!")
+                st.rerun()  # Instantly refresh the app to load new data
+
+with st.sidebar.expander("🗑️ Remove Asset", expanded=False):
+    if portfolio_data:
+        asset_to_remove = st.selectbox("Select Asset to Delete", [a['code'] for a in portfolio_data])
+        if st.button("Delete"):
+            portfolio_db.remove_asset(asset_to_remove)
+            st.warning(f"Deleted {asset_to_remove}")
+            st.rerun()
+    else:
+        st.info("Portfolio is empty.")
 
 # ---------------------------------------------------------
 # LIVE DATA RESOLUTION
@@ -55,6 +80,8 @@ for asset in portfolio_data:
     
     resolved_assets.append({
         "Asset Name": data["name"],
+        "Type": asset["type"],
+        "Code": asset["code"],
         "Units": asset["units"],
         "Live Price": round(data["price"], 2),
         "Current Value (₹)": round(market_value, 2),
@@ -66,7 +93,6 @@ df_assets = pd.DataFrame(resolved_assets)
 # ---------------------------------------------------------
 # CALCULUS ENGINE EXECUTION
 # ---------------------------------------------------------
-# Initialize the mathematical backend with sidebar variables
 fire_engine = FIREEngine(
     current_portfolio_value=total_current_value,
     lifestyle_cost_today=lifestyle_cost_today,
@@ -77,12 +103,8 @@ fire_engine = FIREEngine(
     swr=swr / 100.0
 )
 
-# Run the optimization loop
 optimal_base_sip = fire_engine.optimize_starting_sip()
-
-# Generate the trajectory dataframe based on the optimal SIP
 df_simulation = fire_engine.run_simulation(optimal_base_sip)
-# Streamlit charts prefer the x-axis to be the index
 df_chart = df_simulation.set_index("Month")
 
 # ---------------------------------------------------------
@@ -91,7 +113,6 @@ df_chart = df_simulation.set_index("Month")
 st.title("🛡️ The Infinite Horizon Freedom Engine")
 st.markdown("---")
 
-# Row 1: The Metrics Matrix
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric("Live Net Worth Tracked", f"₹{total_current_value:,.2f}")
@@ -103,15 +124,16 @@ with col4:
     st.metric("Required Start SIP Today", f"₹{optimal_base_sip:,.2f}", 
               help="The exact amount you must invest this month. This assumes you will increase it annually by your chosen Step-Up rate.")
 
-# Row 2: Visualizing the Matrix
 st.subheader("📉 Wealth Trajectory: Nominal Illusion vs. True Purchasing Power")
 st.area_chart(df_chart[["Nominal_Value", "Real_Value"]])
 
-# Row 3: Granular Data Tabs
 tab1, tab2 = st.tabs(["📊 Live Assets Tracking Ledger", "🧮 Pure Numerical Stream"])
 
 with tab1:
-    st.dataframe(df_assets, use_container_width=True)
+    if not df_assets.empty:
+        st.dataframe(df_assets, use_container_width=True)
+    else:
+        st.info("Your portfolio is currently empty. Add assets using the Portfolio Manager in the sidebar.")
 
 with tab2:
     st.dataframe(df_simulation.style.format({

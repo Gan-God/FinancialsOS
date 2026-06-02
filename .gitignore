@@ -1,0 +1,18 @@
+# Isolated Python Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python internal bytecode and compilation caching
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local Streamlit interface configuration and state data
+.streamlit/
+
+# OS-specific hidden metadata files
+.DS_Store
+Thumbs.db
+portfolio.db
+*.sqlite3
