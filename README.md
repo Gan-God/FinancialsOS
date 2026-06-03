@@ -13,7 +13,7 @@ We don't believe in a one-size-fits-all retirement. FinancialsOS dynamically sim
 ## ⚙️ Core Modules
 * **The Infinite Horizon Engine:** Continuous calculus simulations that strip away the "nominal illusion" of standard calculators. It accounts for compound inflation, currency decay, and annual step-up allocations to give you the exact Rupee amount you need to invest today.
 * **Zero-Based Cashflow Command:** Granular budgeting to track incoming cash against fixed expenses and variable burn rates.
-* **Active Portfolio Command:** Track live P&L, capital allocation heatmaps, and true XIRR across your active stock trades and passive mutual fund SIPs without relying on bloated web dashboards.
+* **Active Portfolio Command:** Track live P&L, capital allocation heatmaps, and true XIRR across your active stock trades and passive mutual fund SIPs.
 * **Tax Optimization:** Localized projections for maximizing your deductions and shielding your wealth.
 
 ## 🔒 Privacy First (Local & Encrypted)
