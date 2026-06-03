@@ -1,6 +1,6 @@
 [package]
 name = "financialsos"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -22,4 +22,19 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rusqlite = { version = "0.31.0", features = ["bundled"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10.8"
+
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = true          # Enable Link Time Optimization (LTO)
+codegen-units = 1   # Reduce parallel codegen units to improve size optimizations
+panic = "abort"     # Remove panic unwinding to reduce binary footprint
+strip = true        # Automatically strip symbols and debug info from the binary
+
+
+
+
 

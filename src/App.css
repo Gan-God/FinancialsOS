@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+body {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #000000;
+}
+
+h1, h2, h3, h4, h5, h6, .font-heading {
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Metallic Gradients */
+.bg-chrome-silver {
+  background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 25%, #cbd5e1 50%, #94a3b8 75%, #e2e8f0 100%);
+  border: 1px solid #ffffff;
+  color: #000000;
+}
+
+.bg-rose-gold {
+  background: linear-gradient(135deg, #fae8e7 0%, #e5c2c0 30%, #b76e79 50%, #e5c2c0 70%, #fae8e7 100%);
+  border: 1px solid #fae8e7;
+  color: #000000;
+}
+
+.text-chrome-silver {
+  background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 50%, #94a3b8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-rose-gold {
+  background: linear-gradient(135deg, #fae8e7 0%, #e5c2c0 50%, #b76e79 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.border-chrome-silver-gradient {
+  border-image: linear-gradient(135deg, #ffffff, #cbd5e1, #94a3b8, #475569) 1;
+}
+
+.border-rose-gold-gradient {
+  border-image: linear-gradient(135deg, #fae8e7, #e5c2c0, #b76e79, #881337) 1;
+}
+
+/* Carbon & Grid Backgrounds */
+.metallic-bg {
+  background-color: #000000;
+  background-image: 
+    radial-gradient(at 50% 0%, rgba(163, 230, 53, 0.08) 0px, transparent 55%),
+    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+  background-size: 100% 100%, 24px 24px, 24px 24px;
+}
+
+.metallic-card {
+  background: linear-gradient(135deg, rgba(15, 15, 15, 0.85) 0%, rgba(2, 2, 2, 0.98) 100%);
+  border: 1px solid rgba(203, 213, 225, 0.16); /* subtle chrome-silver border */
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.7), inset 0 1px 0 0 rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+}
+
+.metallic-card-gold {
+  background: linear-gradient(135deg, rgba(22, 15, 16, 0.9) 0%, rgba(2, 2, 2, 0.98) 100%);
+  border: 1px solid rgba(183, 110, 121, 0.35); /* subtle rose-gold border */
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.7), inset 0 1px 0 0 rgba(250, 232, 231, 0.03);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+}
