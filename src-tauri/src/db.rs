@@ -33,6 +33,7 @@ pub struct SettingsItem {
     pub swr: f64,
     pub pan_number: Option<String>,
     pub pan_name: Option<String>,
+    pub theme: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -88,15 +89,17 @@ pub fn init_db(app_handle: &tauri::AppHandle) -> Result<(), String> {
             step_up_rate REAL NOT NULL,
             swr REAL NOT NULL,
             pan_number TEXT,
-            pan_name TEXT
+            pan_name TEXT,
+            theme TEXT
         )",
         [],
     )
     .map_err(|e| format!("Failed to create settings table: {}", e))?;
 
-    // Alter table to add PAN columns if they are not already there
+    // Alter table to add PAN and theme columns if they are not already there
     let _ = conn.execute("ALTER TABLE settings ADD COLUMN pan_number TEXT", []);
     let _ = conn.execute("ALTER TABLE settings ADD COLUMN pan_name TEXT", []);
+    let _ = conn.execute("ALTER TABLE settings ADD COLUMN theme TEXT", []);
 
     // Create cashflow table
     conn.execute(
@@ -358,7 +361,7 @@ pub fn get_settings(app_handle: tauri::AppHandle, username: String) -> Result<Op
     let clean_user = username.trim().to_lowercase();
 
     let mut stmt = conn
-        .prepare("SELECT username, gemini_api_key, inflation_rate, nominal_cagr, step_up_rate, swr, pan_number, pan_name FROM settings WHERE username = ?1")
+        .prepare("SELECT username, gemini_api_key, inflation_rate, nominal_cagr, step_up_rate, swr, pan_number, pan_name, theme FROM settings WHERE username = ?1")
         .map_err(|e| format!("SQL preparation error: {}", e))?;
 
     let mut rows = stmt
@@ -374,6 +377,7 @@ pub fn get_settings(app_handle: tauri::AppHandle, username: String) -> Result<Op
         let swr: f64 = row.get(5).map_err(|e| e.to_string())?;
         let pan_number: Option<String> = row.get(6).map_err(|e| e.to_string())?;
         let pan_name: Option<String> = row.get(7).map_err(|e| e.to_string())?;
+        let theme: Option<String> = row.get(8).map_err(|e| e.to_string())?;
 
         Ok(Some(SettingsItem {
             username,
@@ -384,6 +388,7 @@ pub fn get_settings(app_handle: tauri::AppHandle, username: String) -> Result<Op
             swr,
             pan_number,
             pan_name,
+            theme,
         }))
     } else {
         Ok(None)
@@ -401,6 +406,7 @@ pub fn save_settings(
     swr: f64,
     pan_number: Option<String>,
     pan_name: Option<String>,
+    theme: Option<String>,
 ) -> Result<(), String> {
     let db_path = get_db_path(&app_handle)?;
     let conn = Connection::open(&db_path)
@@ -414,9 +420,10 @@ pub fn save_settings(
     let clean_key = gemini_api_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
     let clean_pan_number = pan_number.map(|p| p.trim().to_uppercase().to_string()).filter(|p| !p.is_empty());
     let clean_pan_name = pan_name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+    let clean_theme = theme.map(|t| t.trim().to_lowercase().to_string()).filter(|t| !t.is_empty());
 
     conn.execute(
-        "INSERT OR REPLACE INTO settings (username, gemini_api_key, inflation_rate, nominal_cagr, step_up_rate, swr, pan_number, pan_name) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT OR REPLACE INTO settings (username, gemini_api_key, inflation_rate, nominal_cagr, step_up_rate, swr, pan_number, pan_name, theme) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             clean_user,
             clean_key,
@@ -425,7 +432,8 @@ pub fn save_settings(
             step_up_rate,
             swr,
             clean_pan_number,
-            clean_pan_name
+            clean_pan_name,
+            clean_theme
         ],
     )
     .map_err(|e| format!("Failed to save settings: {}", e))?;

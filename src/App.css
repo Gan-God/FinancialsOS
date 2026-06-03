@@ -67,3 +67,118 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   backdrop-filter: blur(12px);
   border-radius: 16px;
 }
+
+/* Light Mode styling overrides */
+.light-mode {
+  color-scheme: light;
+}
+
+.light-mode body {
+  background-color: #f8f8fa;
+  color: #18181b;
+}
+
+.light-mode .metallic-bg {
+  background-color: #f8f8fa;
+  background-image: 
+    radial-gradient(at 50% 0%, rgba(163, 230, 53, 0.06) 0px, transparent 55%),
+    linear-gradient(rgba(24, 24, 27, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(24, 24, 27, 0.02) 1px, transparent 1px);
+}
+
+.light-mode .text-white {
+  color: #18181b !important;
+}
+
+.light-mode .text-zinc-100 {
+  color: #18181b !important;
+}
+
+.light-mode .text-zinc-200 {
+  color: #18181b !important;
+}
+
+.light-mode .text-zinc-300 {
+  color: #27272a !important;
+}
+
+.light-mode .text-zinc-400 {
+  color: #3f3f46 !important;
+}
+
+.light-mode .text-zinc-500 {
+  color: #52525b !important;
+}
+
+.light-mode .text-zinc-450 {
+  color: #4b5563 !important;
+}
+
+.light-mode .text-zinc-600 {
+  color: #71717a !important;
+}
+
+.light-mode .text-zinc-550 {
+  color: #71717a !important;
+}
+
+.light-mode .bg-black {
+  background-color: #ffffff !important;
+}
+
+.light-mode .bg-zinc-950 {
+  background-color: #f4f4f5 !important;
+}
+
+.light-mode .bg-zinc-900 {
+  background-color: #e4e4e7 !important;
+}
+
+.light-mode .border-zinc-800 {
+  border-color: #e4e4e7 !important;
+}
+
+.light-mode .border-zinc-900 {
+  border-color: #d4d4d8 !important;
+}
+
+.light-mode .border-zinc-850 {
+  border-color: #e4e4e7 !important;
+}
+
+.light-mode .metallic-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(250, 250, 250, 0.99) 100%);
+  border: 1px solid rgba(183, 110, 121, 0.15); /* subtle warm gold border */
+  box-shadow: 0 8px 32px 0 rgba(24, 24, 27, 0.06), inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  color: #18181b !important;
+}
+
+.light-mode .metallic-card-gold {
+  background: linear-gradient(135deg, rgba(253, 250, 251, 0.95) 0%, rgba(255, 255, 255, 0.99) 100%);
+  border: 1px solid rgba(183, 110, 121, 0.35); /* subtle rose-gold border */
+  box-shadow: 0 8px 32px 0 rgba(24, 24, 27, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  color: #18181b !important;
+}
+
+.light-mode .text-chrome-silver {
+  background: linear-gradient(135deg, #18181b 0%, #3f3f46 50%, #71717a 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.light-mode input, .light-mode select, .light-mode textarea {
+  color: #18181b !important;
+  background-color: #ffffff !important;
+  border-color: #d4d4d8 !important;
+}
+
+.light-mode input::placeholder, .light-mode textarea::placeholder {
+  color: #a1a1aa !important;
+}
+
+.light-mode input:focus, .light-mode select:focus, .light-mode textarea:focus {
+  border-color: #b76e79 !important;
+  box-shadow: 0 0 0 1px #b76e79 !important;
+}

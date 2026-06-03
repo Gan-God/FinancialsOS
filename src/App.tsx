@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AreaChart, Area, BarChart, Bar, Legend, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { Activity, Target, Shield, Wallet, Plus, Trash2, ArrowUpRight, ArrowDownRight, BarChart3, RefreshCw, Lock, Key, UserPlus, User, CheckCircle, ChevronRight, Brain, LogOut, Upload, Check, AlertTriangle } from "lucide-react";
+import { Activity, Target, Shield, Wallet, Plus, Trash2, ArrowUpRight, ArrowDownRight, BarChart3, RefreshCw, Lock, Key, UserPlus, User, CheckCircle, ChevronRight, Brain, LogOut, Upload, Check, AlertTriangle, Sun, Moon, Keyboard } from "lucide-react";
 import "./App.css";
 
 interface SimulationResult {
@@ -374,6 +374,8 @@ function App() {
   const [aiLoading, setAiLoading] = useState<boolean>(false);
   const [panNumber, setPanNumber] = useState<string>("");
   const [panName, setPanName] = useState<string>("");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [showShortcutsModal, setShowShortcutsModal] = useState<boolean>(false);
 
   // Advanced AI Dashboard State
   const [dashGeminiApiKey, setDashGeminiApiKey] = useState<string>("");
@@ -537,6 +539,18 @@ function App() {
     }
   }, [casFile, panNumber]);
 
+  // DOM Theme class switcher effect
+  useEffect(() => {
+    const root = window.document.documentElement;
+    if (theme === "light") {
+      root.classList.add("light-mode");
+      root.classList.remove("dark-mode");
+    } else {
+      root.classList.add("dark-mode");
+      root.classList.remove("light-mode");
+    }
+  }, [theme]);
+
   async function checkUserExists() {
     try {
       const exists: boolean = await appInvoke("has_user");
@@ -573,6 +587,11 @@ function App() {
         } else {
           setPanName("");
         }
+        if (settings.theme) {
+          setTheme(settings.theme as "dark" | "light");
+        } else {
+          setTheme("dark");
+        }
       }
     } catch (err) {
       console.error("Failed to load user settings:", err);
@@ -586,7 +605,8 @@ function App() {
     stepUpToSave?: number, 
     swrToSave?: number,
     panNumberToSave?: string,
-    panNameToSave?: string
+    panNameToSave?: string,
+    themeToSave?: string
   ) {
     if (!loggedInUser) return;
     try {
@@ -599,6 +619,7 @@ function App() {
         swr: swrToSave !== undefined ? swrToSave : swr,
         panNumber: panNumberToSave !== undefined ? panNumberToSave : panNumber,
         panName: panNameToSave !== undefined ? panNameToSave : panName,
+        theme: themeToSave !== undefined ? themeToSave : theme,
       });
     } catch (err) {
       console.error("Failed to save settings:", err);
@@ -640,7 +661,8 @@ function App() {
         stepUpRate: 0.10,
         swr: 0.035,
         panNumber: null,
-        panName: null
+        panName: null,
+        theme: "dark"
       });
     } catch (err) {
       setAuthError(String(err));
@@ -929,7 +951,7 @@ function App() {
       setCurrentPortfolio(0);
 
       // Save settings too
-      await saveUserSettings(geminiApiKey, undefined, undefined, undefined, undefined, panNumber, panName);
+      await saveUserSettings(geminiApiKey, undefined, undefined, undefined, undefined, panNumber, panName, theme);
 
       setIsOnboarding(false);
       loadCashflows();
@@ -1597,6 +1619,28 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
               title="Lock and Secure Session"
             >
               <LogOut className="h-3.5 w-3.5" /> Lock
+            </button>
+
+            {/* Theme Toggle Button */}
+            <button
+              onClick={async () => {
+                const nextTheme = theme === "dark" ? "light" : "dark";
+                setTheme(nextTheme);
+                await saveUserSettings(undefined, undefined, undefined, undefined, undefined, undefined, undefined, nextTheme);
+              }}
+              className="ml-2 p-1.5 rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-400 hover:border-zinc-700 hover:text-white transition-colors"
+              title="Toggle Light/Dark Theme"
+            >
+              {theme === "dark" ? <Sun className="h-3.5 w-3.5 text-amber-400" /> : <Moon className="h-3.5 w-3.5 text-indigo-500" />}
+            </button>
+
+            {/* Shortcuts Guide Button */}
+            <button
+              onClick={() => setShowShortcutsModal(true)}
+              className="ml-2 p-1.5 rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-400 hover:border-zinc-700 hover:text-white transition-colors"
+              title="View Keyboard Shortcuts"
+            >
+              <Keyboard className="h-3.5 w-3.5" />
             </button>
           </div>
           
@@ -2630,12 +2674,172 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
                     </div>
                   )}
                 </div>
+
+                {/* Zero-Based Sankey Flow Visualizer */}
+                {(() => {
+                  const totalIncome = cashflows.filter(c => c.flow_type === "INCOME").reduce((s, c) => s + c.amount, 0);
+                  const totalExpense = cashflows.filter(c => c.flow_type === "EXPENSE").reduce((s, c) => s + c.amount, 0);
+                  const totalInvestment = cashflows.filter(c => c.flow_type === "INVESTMENT").reduce((s, c) => s + c.amount, 0);
+                  const netSurplus = Math.max(0, totalIncome - totalExpense - totalInvestment);
+
+                  const maxNodeHeight = 120;
+                  const scale = maxNodeHeight / Math.max(totalIncome, 1);
+                  const hIncome = totalIncome * scale;
+                  const hExpense = totalExpense * scale;
+                  const hInvestment = totalInvestment * scale;
+                  const hSurplus = netSurplus * scale;
+
+                  const yIncomeTop = (150 - hIncome) / 2 + 10;
+                  const yExpenseTop = 15;
+                  const yInvestmentTop = yExpenseTop + hExpense + 25;
+                  const ySurplusTop = (150 - hSurplus) / 2 + 10;
+
+                  return (
+                    <div className="metallic-card p-6">
+                      <h3 className="mb-2 text-lg font-semibold text-zinc-200 font-heading">Zero-Based Capital Flow (Sankey)</h3>
+                      <p className="text-xs text-zinc-500 mb-6">Visual mapping of total capital inflows routed to expenses, active investments, and net savings surplus.</p>
+
+                      {totalIncome > 0 ? (
+                        <div className="w-full flex justify-center bg-black/20 p-4 rounded-xl border border-zinc-900">
+                          <svg viewBox="0 0 500 200" className="w-full max-w-[500px] h-auto overflow-visible font-sans text-[10px]">
+                            <defs>
+                              <linearGradient id="gradientExpense" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0%" stopColor="#22c55e" stopOpacity="0.25" />
+                                <stop offset="100%" stopColor="#ef4444" stopOpacity="0.25" />
+                              </linearGradient>
+                              <linearGradient id="gradientInvestment" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0%" stopColor="#22c55e" stopOpacity="0.25" />
+                                <stop offset="100%" stopColor="#2563eb" stopOpacity="0.25" />
+                              </linearGradient>
+                              <linearGradient id="gradientSurplus" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0%" stopColor="#22c55e" stopOpacity="0.25" />
+                                <stop offset="100%" stopColor="#e5c2c0" stopOpacity="0.25" />
+                              </linearGradient>
+                            </defs>
+
+                            {hExpense > 0 && (
+                              <path
+                                d={`M 40,${yIncomeTop + hExpense / 2} C 140,${yIncomeTop + hExpense / 2} 140,${yExpenseTop + hExpense / 2} 240,${yExpenseTop + hExpense / 2}`}
+                                fill="none"
+                                stroke="url(#gradientExpense)"
+                                strokeWidth={Math.max(1, hExpense)}
+                              />
+                            )}
+                            {hInvestment > 0 && (
+                              <path
+                                d={`M 40,${yIncomeTop + hExpense + hInvestment / 2} C 140,${yIncomeTop + hExpense + hInvestment / 2} 140,${yInvestmentTop + hInvestment / 2} 240,${yInvestmentTop + hInvestment / 2}`}
+                                fill="none"
+                                stroke="url(#gradientInvestment)"
+                                strokeWidth={Math.max(1, hInvestment)}
+                              />
+                            )}
+                            {hSurplus > 0 && (
+                              <path
+                                d={`M 40,${yIncomeTop + hExpense + hInvestment + hSurplus / 2} C 250,${yIncomeTop + hExpense + hInvestment + hSurplus / 2} 250,${ySurplusTop + hSurplus / 2} 460,${ySurplusTop + hSurplus / 2}`}
+                                fill="none"
+                                stroke="url(#gradientSurplus)"
+                                strokeWidth={Math.max(1, hSurplus)}
+                              />
+                            )}
+
+                            <rect x="20" y={yIncomeTop} width="20" height={Math.max(2, hIncome)} fill="#22c55e" rx="4" />
+                            <text x="15" y={yIncomeTop - 6} textAnchor="start" fill="#22c55e" className="font-bold">INFLOW</text>
+                            <text x="15" y={yIncomeTop + hIncome + 12} textAnchor="start" fill="#a1a1aa">₹{totalIncome.toLocaleString()}</text>
+
+                            {hExpense > 0 && (
+                              <>
+                                <rect x="240" y={yExpenseTop} width="20" height={hExpense} fill="#ef4444" rx="4" />
+                                <text x="270" y={yExpenseTop + hExpense / 2 + 3} textAnchor="start" fill="#ef4444" className="font-bold">EXPENSES</text>
+                                <text x="270" y={yExpenseTop + hExpense / 2 + 14} textAnchor="start" fill="#71717a">₹{totalExpense.toLocaleString()}</text>
+                              </>
+                            )}
+
+                            {hInvestment > 0 && (
+                              <>
+                                <rect x="240" y={yInvestmentTop} width="20" height={hInvestment} fill="#2563eb" rx="4" />
+                                <text x="270" y={yInvestmentTop + hInvestment / 2 + 3} textAnchor="start" fill="#2563eb" className="font-bold">INVESTED</text>
+                                <text x="270" y={yInvestmentTop + hInvestment / 2 + 14} textAnchor="start" fill="#71717a">₹{totalInvestment.toLocaleString()}</text>
+                              </>
+                            )}
+
+                            {hSurplus > 0 && (
+                              <>
+                                <rect x="460" y={ySurplusTop} width="20" height={hSurplus} fill="#e5c2c0" rx="4" />
+                                <text x="445" y={ySurplusTop - 6} textAnchor="end" fill="#e5c2c0" className="font-bold">SURPLUS</text>
+                                <text x="445" y={ySurplusTop + hSurplus + 12} textAnchor="end" fill="#a1a1aa">₹{netSurplus.toLocaleString()}</text>
+                              </>
+                            )}
+                          </svg>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-16 text-zinc-550 border border-dashed border-zinc-800 rounded-xl">
+                          <Activity className="h-10 w-10 opacity-30 mb-2 text-lime-450" />
+                          <p className="text-sm font-semibold">No flow data available.</p>
+                          <p className="text-xs text-zinc-650 mt-1">Please insert cashflow values in the ledger to compile flow channels.</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </>
           )}
 
         </div>
       </div>
+
+      {/* Keyboard Shortcuts Guide Modal */}
+      {showShortcutsModal && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="w-full max-w-md metallic-card p-6 border border-zinc-800 space-y-4">
+            <div className="flex justify-between items-center border-b border-zinc-850 pb-3">
+              <h3 className="text-base font-bold text-zinc-200 uppercase tracking-wider flex items-center gap-2">
+                <Keyboard className="h-5 w-5 text-lime-400" /> System Shortcuts
+              </h3>
+              <button
+                onClick={() => setShowShortcutsModal(false)}
+                className="text-zinc-500 hover:text-white font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="space-y-3 text-xs text-zinc-300">
+              <p className="text-zinc-450 leading-normal">Use these local key combinations to trigger navigation and interface focal points quickly:</p>
+              
+              <div className="divide-y divide-zinc-900 border-t border-b border-zinc-900 py-1.5">
+                <div className="flex justify-between py-2">
+                  <span className="text-zinc-300">Switch to Horizon Engine</span>
+                  <kbd className="bg-zinc-900 px-2 py-0.5 rounded text-[10px] font-mono text-rose-gold border border-zinc-800">Alt + 1</kbd>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-zinc-300">Switch to Asset Ledger</span>
+                  <kbd className="bg-zinc-900 px-2 py-0.5 rounded text-[10px] font-mono text-rose-gold border border-zinc-800">Alt + 2</kbd>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-zinc-300">Switch to Cashflow Tracker</span>
+                  <kbd className="bg-zinc-900 px-2 py-0.5 rounded text-[10px] font-mono text-rose-gold border border-zinc-800">Alt + 3</kbd>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-zinc-300">Switch to Analytics Panel</span>
+                  <kbd className="bg-zinc-900 px-2 py-0.5 rounded text-[10px] font-mono text-rose-gold border border-zinc-800">Alt + 4</kbd>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-zinc-300">Focus Tab Primary Inputs</span>
+                  <kbd className="bg-zinc-900 px-2 py-0.5 rounded text-[10px] font-mono text-rose-gold border border-zinc-800">/</kbd>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowShortcutsModal(false)}
+              className="w-full rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 font-semibold text-xs py-2.5 transition-all"
+            >
+              Close Guide
+            </button>
+          </div>
+        </div>
+      )}
 
       <footer className="mt-8 border-t border-zinc-900 pt-4 text-center text-xs text-zinc-600 relative z-10 flex flex-col sm:flex-row justify-between items-center gap-2">
         <p>FinancialsOS is a proprietary, local-first continuous calculus horizonal engine.</p>
