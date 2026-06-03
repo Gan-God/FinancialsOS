@@ -10,6 +10,7 @@ pub struct AssetItem {
     pub asset_type: String,
     pub code: String,
     pub units: f64,
+    pub avg_buy_price: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -20,6 +21,28 @@ pub struct CashflowItem {
     pub amount: f64,
     pub flow_type: String,
     pub date: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SettingsItem {
+    pub username: String,
+    pub gemini_api_key: Option<String>,
+    pub inflation_rate: f64,
+    pub nominal_cagr: f64,
+    pub step_up_rate: f64,
+    pub swr: f64,
+    pub pan_number: Option<String>,
+    pub pan_name: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TransactionItem {
+    pub id: i64,
+    pub asset_type: String,
+    pub code: String,
+    pub buy_price: f64,
+    pub units: f64,
+    pub purchase_date: String,
 }
 
 /// Resolves the absolute path to the SQLite database file and ensures the parent folder exists.
@@ -55,53 +78,25 @@ pub fn init_db(app_handle: &tauri::AppHandle) -> Result<(), String> {
     )
     .map_err(|e| format!("Failed to create users table: {}", e))?;
 
-    let table_exists = conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='assets'",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .unwrap_or(0)
-        > 0;
-
-    if table_exists {
-        let has_username_col = {
-            let mut stmt = conn.prepare("PRAGMA table_info(assets)").ok();
-            let mut found = false;
-            if let Some(ref mut stmt) = stmt {
-                if let Ok(mut rows) = stmt.query([]) {
-                    while let Ok(Some(row)) = rows.next() {
-                        if let Ok(col_name) = row.get::<_, String>(1) {
-                            if col_name == "username" {
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            found
-        };
-
-        if !has_username_col {
-            let _ = conn.execute("DROP TABLE IF EXISTS assets", []);
-            let _ = conn.execute("DROP TABLE IF EXISTS cashflow", []);
-        }
-    }
-
-    // Create assets table
+    // Create settings table
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS assets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            asset_type TEXT NOT NULL,
-            code TEXT NOT NULL,
-            units REAL NOT NULL,
-            UNIQUE(username, code)
+        "CREATE TABLE IF NOT EXISTS settings (
+            username TEXT PRIMARY KEY,
+            gemini_api_key TEXT,
+            inflation_rate REAL NOT NULL,
+            nominal_cagr REAL NOT NULL,
+            step_up_rate REAL NOT NULL,
+            swr REAL NOT NULL,
+            pan_number TEXT,
+            pan_name TEXT
         )",
         [],
     )
-    .map_err(|e| format!("Failed to create assets table: {}", e))?;
+    .map_err(|e| format!("Failed to create settings table: {}", e))?;
+
+    // Alter table to add PAN columns if they are not already there
+    let _ = conn.execute("ALTER TABLE settings ADD COLUMN pan_number TEXT", []);
+    let _ = conn.execute("ALTER TABLE settings ADD COLUMN pan_name TEXT", []);
 
     // Create cashflow table
     conn.execute(
@@ -118,6 +113,21 @@ pub fn init_db(app_handle: &tauri::AppHandle) -> Result<(), String> {
     )
     .map_err(|e| format!("Failed to create cashflow table: {}", e))?;
 
+    // Create asset_transactions table (Replacing the legacy aggregate assets table)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS asset_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            asset_type TEXT NOT NULL,
+            code TEXT NOT NULL,
+            buy_price REAL NOT NULL,
+            units REAL NOT NULL,
+            purchase_date TEXT NOT NULL
+        )",
+        [],
+    )
+    .map_err(|e| format!("Failed to create asset_transactions table: {}", e))?;
+
     Ok(())
 }
 
@@ -129,16 +139,25 @@ pub fn get_assets(app_handle: tauri::AppHandle, username: String) -> Result<Vec<
 
     let clean_user = username.trim().to_lowercase();
 
+    // Dynamically calculate units and weighted average buy price on the fly
     let mut stmt = conn
-        .prepare("SELECT asset_type, code, units FROM assets WHERE username = ?1")
+        .prepare(
+            "SELECT asset_type, code, SUM(units), SUM(units * buy_price) / SUM(units) 
+             FROM asset_transactions 
+             WHERE username = ?1 
+             GROUP BY code"
+        )
         .map_err(|e| format!("SQL preparation error: {}", e))?;
 
     let asset_iter = stmt
         .query_map(params![clean_user], |row| {
+            let units: f64 = row.get(2)?;
+            let avg_buy_price: f64 = row.get(3)?;
             Ok(AssetItem {
                 asset_type: row.get(0)?,
                 code: row.get(1)?,
-                units: row.get(2)?,
+                units,
+                avg_buy_price,
             })
         })
         .map_err(|e| format!("SQL query execution error: {}", e))?;
@@ -152,12 +171,53 @@ pub fn get_assets(app_handle: tauri::AppHandle, username: String) -> Result<Vec<
 }
 
 #[tauri::command]
-pub fn add_or_update_asset(
+pub fn get_transactions(app_handle: tauri::AppHandle, username: String, code: String) -> Result<Vec<TransactionItem>, String> {
+    let db_path = get_db_path(&app_handle)?;
+    let conn = Connection::open(&db_path)
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    let clean_user = username.trim().to_lowercase();
+    let clean_code = code.trim().to_uppercase();
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, asset_type, code, buy_price, units, purchase_date 
+             FROM asset_transactions 
+             WHERE username = ?1 AND code = ?2 
+             ORDER BY purchase_date DESC"
+        )
+        .map_err(|e| format!("SQL preparation error: {}", e))?;
+
+    let tx_iter = stmt
+        .query_map(params![clean_user, clean_code], |row| {
+            Ok(TransactionItem {
+                id: row.get(0)?,
+                asset_type: row.get(1)?,
+                code: row.get(2)?,
+                buy_price: row.get(3)?,
+                units: row.get(4)?,
+                purchase_date: row.get(5)?,
+            })
+        })
+        .map_err(|e| format!("SQL query execution error: {}", e))?;
+
+    let mut txs = Vec::new();
+    for tx in tx_iter {
+        txs.push(tx.map_err(|e| format!("Row processing error: {}", e))?);
+    }
+
+    Ok(txs)
+}
+
+#[tauri::command]
+pub fn add_transaction(
     app_handle: tauri::AppHandle,
     username: String,
     asset_type: String,
     code: String,
+    buy_price: f64,
     units: f64,
+    purchase_date: String,
 ) -> Result<(), String> {
     let db_path = get_db_path(&app_handle)?;
     let conn = Connection::open(&db_path)
@@ -165,35 +225,39 @@ pub fn add_or_update_asset(
 
     let clean_user = username.trim().to_lowercase();
     let clean_code = code.trim().to_uppercase();
+
     if clean_user.is_empty() {
         return Err("Username cannot be empty".to_string());
     }
     if clean_code.is_empty() {
         return Err("Asset code cannot be empty".to_string());
     }
-    if units < 0.0 {
-        return Err("Units cannot be negative".to_string());
+    if buy_price <= 0.0 {
+        return Err("Buy price must be greater than 0".to_string());
+    }
+    if units <= 0.0 {
+        return Err("Units must be greater than 0".to_string());
     }
 
     conn.execute(
-        "INSERT OR REPLACE INTO assets (username, asset_type, code, units) VALUES (?1, ?2, ?3, ?4)",
-        params![clean_user, asset_type.trim(), clean_code, units],
+        "INSERT INTO asset_transactions (username, asset_type, code, buy_price, units, purchase_date) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![clean_user, asset_type.trim(), clean_code, buy_price, units, purchase_date.trim()],
     )
-    .map_err(|e| format!("Failed to insert or replace asset: {}", e))?;
+    .map_err(|e| format!("Failed to insert transaction: {}", e))?;
 
     Ok(())
 }
 
 #[tauri::command]
-pub fn remove_asset(app_handle: tauri::AppHandle, username: String, code: String) -> Result<(), String> {
+pub fn remove_transaction(app_handle: tauri::AppHandle, username: String, id: i64) -> Result<(), String> {
     let db_path = get_db_path(&app_handle)?;
     let conn = Connection::open(&db_path)
         .map_err(|e| format!("Database connection error: {}", e))?;
 
     let clean_user = username.trim().to_lowercase();
-    let clean_code = code.trim().to_uppercase();
-    conn.execute("DELETE FROM assets WHERE username = ?1 AND code = ?2", params![clean_user, clean_code])
-        .map_err(|e| format!("Failed to delete asset: {}", e))?;
+
+    conn.execute("DELETE FROM asset_transactions WHERE username = ?1 AND id = ?2", params![clean_user, id])
+        .map_err(|e| format!("Failed to delete transaction: {}", e))?;
 
     Ok(())
 }
@@ -281,6 +345,90 @@ pub fn remove_cashflow(app_handle: tauri::AppHandle, username: String, id: i64) 
     let clean_user = username.trim().to_lowercase();
     conn.execute("DELETE FROM cashflow WHERE username = ?1 AND id = ?2", params![clean_user, id])
         .map_err(|e| format!("Failed to delete cashflow entry: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_settings(app_handle: tauri::AppHandle, username: String) -> Result<Option<SettingsItem>, String> {
+    let db_path = get_db_path(&app_handle)?;
+    let conn = Connection::open(&db_path)
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    let clean_user = username.trim().to_lowercase();
+
+    let mut stmt = conn
+        .prepare("SELECT username, gemini_api_key, inflation_rate, nominal_cagr, step_up_rate, swr, pan_number, pan_name FROM settings WHERE username = ?1")
+        .map_err(|e| format!("SQL preparation error: {}", e))?;
+
+    let mut rows = stmt
+        .query(params![clean_user])
+        .map_err(|e| format!("SQL query execution error: {}", e))?;
+
+    if let Some(row) = rows.next().map_err(|e| format!("Row fetching error: {}", e))? {
+        let username: String = row.get(0).map_err(|e| e.to_string())?;
+        let gemini_api_key: Option<String> = row.get(1).map_err(|e| e.to_string())?;
+        let inflation_rate: f64 = row.get(2).map_err(|e| e.to_string())?;
+        let nominal_cagr: f64 = row.get(3).map_err(|e| e.to_string())?;
+        let step_up_rate: f64 = row.get(4).map_err(|e| e.to_string())?;
+        let swr: f64 = row.get(5).map_err(|e| e.to_string())?;
+        let pan_number: Option<String> = row.get(6).map_err(|e| e.to_string())?;
+        let pan_name: Option<String> = row.get(7).map_err(|e| e.to_string())?;
+
+        Ok(Some(SettingsItem {
+            username,
+            gemini_api_key,
+            inflation_rate,
+            nominal_cagr,
+            step_up_rate,
+            swr,
+            pan_number,
+            pan_name,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+pub fn save_settings(
+    app_handle: tauri::AppHandle,
+    username: String,
+    gemini_api_key: Option<String>,
+    inflation_rate: f64,
+    nominal_cagr: f64,
+    step_up_rate: f64,
+    swr: f64,
+    pan_number: Option<String>,
+    pan_name: Option<String>,
+) -> Result<(), String> {
+    let db_path = get_db_path(&app_handle)?;
+    let conn = Connection::open(&db_path)
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    let clean_user = username.trim().to_lowercase();
+    if clean_user.is_empty() {
+        return Err("Username cannot be empty".to_string());
+    }
+
+    let clean_key = gemini_api_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
+    let clean_pan_number = pan_number.map(|p| p.trim().to_uppercase().to_string()).filter(|p| !p.is_empty());
+    let clean_pan_name = pan_name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (username, gemini_api_key, inflation_rate, nominal_cagr, step_up_rate, swr, pan_number, pan_name) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            clean_user,
+            clean_key,
+            inflation_rate,
+            nominal_cagr,
+            step_up_rate,
+            swr,
+            clean_pan_number,
+            clean_pan_name
+        ],
+    )
+    .map_err(|e| format!("Failed to save settings: {}", e))?;
 
     Ok(())
 }

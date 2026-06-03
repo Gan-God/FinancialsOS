@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AreaChart, Area, BarChart, Bar, Legend, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { Activity, Target, Shield, Wallet, Plus, Trash2, ArrowUpRight, ArrowDownRight, BarChart3, RefreshCw, Lock, Key, UserPlus, CheckCircle, ChevronRight, Brain, LogOut } from "lucide-react";
+import { Activity, Target, Shield, Wallet, Plus, Trash2, ArrowUpRight, ArrowDownRight, BarChart3, RefreshCw, Lock, Key, UserPlus, User, CheckCircle, ChevronRight, Brain, LogOut, Upload, Check, AlertTriangle } from "lucide-react";
 import "./App.css";
 
 interface SimulationResult {
@@ -21,6 +21,9 @@ interface ResolvedAsset {
   value: number;
   date: string;
   status: string;
+  avg_buy_price: number;
+  pnl: number;
+  pnl_percentage: number;
 }
 
 interface CashflowItem {
@@ -44,6 +47,305 @@ const getMonthYear = (dateStr: string) => {
   }
   return `Unknown ${y}`;
 };
+
+// Web Demo invoke adapter
+async function appInvoke(cmd: string, args?: any): Promise<any> {
+  const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__;
+  if (!isTauri) {
+    return mockInvoke(cmd, args);
+  }
+  return invoke(cmd, args);
+}
+
+// Helper to hash password mock
+async function sha256Mock(message: string): Promise<string> {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function mockInvoke(cmd: string, args?: any): Promise<any> {
+  console.log(`[Web Demo] Mock invoke: ${cmd}`, args);
+  await new Promise(resolve => setTimeout(resolve, 150)); // artificial network latency
+
+  switch (cmd) {
+    case "has_user": {
+      const users = JSON.parse(localStorage.getItem("fo_users") || "[]");
+      return users.length > 0;
+    }
+    case "register_user": {
+      const users = JSON.parse(localStorage.getItem("fo_users") || "[]");
+      const { username, passwordRaw } = args;
+      const passHash = await sha256Mock(passwordRaw);
+      users.push({ username: username.toLowerCase(), passHash });
+      localStorage.setItem("fo_users", JSON.stringify(users));
+      return null;
+    }
+    case "login_user": {
+      const users = JSON.parse(localStorage.getItem("fo_users") || "[]");
+      const { username, passwordRaw } = args;
+      const passHash = await sha256Mock(passwordRaw);
+      const found = users.find((u: any) => u.username === username.toLowerCase() && u.passHash === passHash);
+      return !!found;
+    }
+    case "get_settings": {
+      const { username } = args;
+      const allSettings = JSON.parse(localStorage.getItem("fo_settings") || "{}");
+      return allSettings[username.toLowerCase()] || null;
+    }
+    case "save_settings": {
+      const { username, geminiApiKey, inflationRate, nominalCagr, stepUpRate, swr, panNumber, panName } = args;
+      const allSettings = JSON.parse(localStorage.getItem("fo_settings") || "{}");
+      allSettings[username.toLowerCase()] = {
+        username: username.toLowerCase(),
+        gemini_api_key: geminiApiKey,
+        inflation_rate: inflationRate,
+        nominal_cagr: nominalCagr,
+        step_up_rate: stepUpRate,
+        swr: swr,
+        pan_number: panNumber,
+        pan_name: panName
+      };
+      localStorage.setItem("fo_settings", JSON.stringify(allSettings));
+      return null;
+    }
+    case "get_cashflow": {
+      const { username } = args;
+      const allCashflows = JSON.parse(localStorage.getItem("fo_cashflows") || "[]");
+      return allCashflows.filter((cf: any) => cf.username === username.toLowerCase());
+    }
+    case "add_cashflow": {
+      const { username, category, description, amount, flowType, date } = args;
+      const allCashflows = JSON.parse(localStorage.getItem("fo_cashflows") || "[]");
+      const newItem = {
+        id: Date.now(),
+        username: username.toLowerCase(),
+        category,
+        description,
+        amount,
+        flow_type: flowType,
+        date
+      };
+      allCashflows.push(newItem);
+      localStorage.setItem("fo_cashflows", JSON.stringify(allCashflows));
+      return null;
+    }
+    case "remove_cashflow": {
+      const { username, id } = args;
+      let allCashflows = JSON.parse(localStorage.getItem("fo_cashflows") || "[]");
+      allCashflows = allCashflows.filter((cf: any) => !(cf.username === username.toLowerCase() && cf.id === id));
+      localStorage.setItem("fo_cashflows", JSON.stringify(allCashflows));
+      return null;
+    }
+    case "get_transactions": {
+      const { username, code } = args;
+      const allTx = JSON.parse(localStorage.getItem("fo_transactions") || "[]");
+      return allTx.filter((t: any) => t.username === username.toLowerCase() && t.code === code.toUpperCase());
+    }
+    case "add_transaction": {
+      const { username, assetType, code, buyPrice, units, purchaseDate } = args;
+      const allTx = JSON.parse(localStorage.getItem("fo_transactions") || "[]");
+      const newItem = {
+        id: Date.now(),
+        username: username.toLowerCase(),
+        asset_type: assetType,
+        code: code.toUpperCase(),
+        buy_price: buyPrice,
+        units: units,
+        purchase_date: purchaseDate
+      };
+      allTx.push(newItem);
+      localStorage.setItem("fo_transactions", JSON.stringify(allTx));
+      return null;
+    }
+    case "remove_transaction": {
+      const { username, id } = args;
+      let allTx = JSON.parse(localStorage.getItem("fo_transactions") || "[]");
+      allTx = allTx.filter((t: any) => !(t.username === username.toLowerCase() && t.id === id));
+      localStorage.setItem("fo_transactions", JSON.stringify(allTx));
+      return null;
+    }
+    case "get_assets": {
+      const { username } = args;
+      const allTx = JSON.parse(localStorage.getItem("fo_transactions") || "[]");
+      const userTx = allTx.filter((t: any) => t.username === username.toLowerCase());
+      
+      const groups: Record<string, { type: string, code: string, units: number, cost: number }> = {};
+      userTx.forEach((tx: any) => {
+        if (!groups[tx.code]) {
+          groups[tx.code] = { type: tx.asset_type, code: tx.code, units: 0, cost: 0 };
+        }
+        groups[tx.code].units += tx.units;
+        groups[tx.code].cost += tx.units * tx.buy_price;
+      });
+
+      return Object.values(groups).map((g: any) => ({
+        type: g.type,
+        code: g.code,
+        units: g.units,
+        avg_buy_price: g.units > 0 ? g.cost / g.units : 0
+      }));
+    }
+    case "get_resolved_portfolio": {
+      const { username } = args;
+      return mockGetResolvedPortfolio(username);
+    }
+    case "calculate_fire": {
+      return mockCalculateFire(args);
+    }
+    default:
+      throw new Error(`Unknown command: ${cmd}`);
+  }
+}
+
+async function mockGetResolvedPortfolio(username: string): Promise<any[]> {
+  const assets = await mockInvoke("get_assets", { username });
+  const cache = JSON.parse(localStorage.getItem("fo_price_cache") || "{}");
+  const resolved = [];
+  const nowStr = new Date().toLocaleDateString("en-GB"); // dd-mm-yyyy
+
+  for (const asset of assets) {
+    let price = 100.0;
+    let name = asset.code;
+    let date = nowStr;
+    let status = "MOCK";
+
+    const cacheKey = `${asset.type}_${asset.code}`;
+    if (asset.type === "MF") {
+      try {
+        const res = await fetch(`https://api.mfapi.in/mf/${asset.code}/latest`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.data && data.data.length > 0) {
+            price = parseFloat(data.data[0].nav);
+            name = data.meta.scheme_name;
+            date = data.data[0].date;
+            status = "LIVE";
+          }
+        }
+      } catch (e) {
+        console.warn("CORS/network error fetching MF, using cache/mock", e);
+      }
+    } else {
+      const mockStockPrices: Record<string, { price: number; name: string }> = {
+        "AAPL": { price: 175.50, name: "Apple Inc." },
+        "MSFT": { price: 420.20, name: "Microsoft Corporation" },
+        "GOOGL": { price: 150.30, name: "Alphabet Inc." },
+        "TSLA": { price: 180.10, name: "Tesla Inc." },
+        "RELIANCE.NS": { price: 2950.00, name: "Reliance Industries Ltd." },
+        "TCS.NS": { price: 3900.00, name: "Tata Consultancy Services Ltd." },
+        "INFY.NS": { price: 1600.00, name: "Infosys Ltd." },
+        "NIFTYBEES.NS": { price: 250.50, name: "Nippon India ETF Nifty Bees" },
+      };
+      const codeUpper = asset.code.toUpperCase();
+      if (mockStockPrices[codeUpper]) {
+        price = mockStockPrices[codeUpper].price;
+        name = mockStockPrices[codeUpper].name;
+        status = "LIVE (MOCK)";
+      } else {
+        if (cache[cacheKey]) {
+          price = cache[cacheKey].price;
+          name = cache[cacheKey].name;
+          date = cache[cacheKey].date;
+          status = "CACHED (OFFLINE)";
+        } else {
+          price = 100.0 + Math.random() * 50;
+          name = `${asset.code} Stock`;
+          status = "MOCK_RANDOM";
+        }
+      }
+    }
+
+    cache[cacheKey] = { price, name, date };
+
+    const value = price * asset.units;
+    const totalCost = asset.avg_buy_price * asset.units;
+    const pnl = value - totalCost;
+    const pnlPercentage = totalCost > 0.0 ? (pnl / totalCost) * 100.0 : 0.0;
+
+    resolved.push({
+      type: asset.type,
+      code: asset.code,
+      name,
+      units: asset.units,
+      price,
+      value,
+      date,
+      status,
+      avg_buy_price: asset.avg_buy_price,
+      pnl,
+      pnl_percentage: pnlPercentage
+    });
+  }
+
+  localStorage.setItem("fo_price_cache", JSON.stringify(cache));
+  return resolved;
+}
+
+function mockCalculateFire(args: any) {
+  const cp = Math.max(0, parseFloat(args.currentPortfolio) || 0);
+  const lc = Math.max(0, parseFloat(args.lifestyleCost) || 0);
+  const ir = Math.max(0, parseFloat(args.inflationRate) || 0);
+  const cagr = Math.max(0, parseFloat(args.nominalCagr) || 0);
+  const sur = Math.max(0, parseFloat(args.stepUpRate) || 0);
+  const y = Math.max(0, parseFloat(args.years) || 0);
+  const s = Math.max(0.0001, parseFloat(args.swr) || 0.035);
+
+  if (lc <= 0 || y <= 0 || s <= 0) {
+    throw new Error("Invalid parameters for FIRE calculation");
+  }
+
+  const true_fire_today = (lc * 12.0) / s;
+  const nominal_target = true_fire_today * Math.pow(1.0 + ir, y);
+  const total_months = Math.floor(y * 12.0);
+
+  const run_simulation = (initial_sip: number) => {
+    const nominal_trajectory = [];
+    const real_trajectory = [];
+    let current_nominal = cp;
+
+    for (let m = 1; m <= total_months; m++) {
+      const current_year = Math.floor((m - 1) / 12) + 1;
+      const current_sip = initial_sip * Math.pow(1.0 + sur, current_year - 1);
+
+      current_nominal = (current_nominal + current_sip) * (1.0 + (cagr / 12.0));
+      nominal_trajectory.push(current_nominal);
+
+      const current_real = current_nominal / Math.pow(1.0 + (ir / 12.0), m);
+      real_trajectory.push(current_real);
+    }
+
+    return { nominal_trajectory, real_trajectory };
+  };
+
+  let low = 0.0;
+  let high = Math.max(true_fire_today, 10000000.0);
+  let optimal_sip = 0.0;
+
+  for (let i = 0; i < 60; i++) {
+    const mid = (low + high) / 2.0;
+    const { real_trajectory } = run_simulation(mid);
+    const final_real_wealth = real_trajectory[real_trajectory.length - 1] || 0.0;
+
+    if (final_real_wealth >= true_fire_today) {
+      optimal_sip = mid;
+      high = mid;
+    } else {
+      low = mid;
+    }
+  }
+
+  const { nominal_trajectory, real_trajectory } = run_simulation(optimal_sip);
+
+  return {
+    optimal_sip: Math.round(optimal_sip * 100.0) / 100.0,
+    true_fire_today,
+    nominal_target,
+    nominal_trajectory,
+    real_trajectory,
+  };
+}
 
 function App() {
   // Authentication & Session State
@@ -69,6 +371,8 @@ function App() {
   const [geminiApiKey, setGeminiApiKey] = useState<string>("");
   const [aiAnalysis, setAiAnalysis] = useState<string>("");
   const [aiLoading, setAiLoading] = useState<boolean>(false);
+  const [panNumber, setPanNumber] = useState<string>("");
+  const [panName, setPanName] = useState<string>("");
 
   // Advanced AI Dashboard State
   const [dashGeminiApiKey, setDashGeminiApiKey] = useState<string>("");
@@ -97,6 +401,26 @@ function App() {
   const [newAssetType, setNewAssetType] = useState<string>("MF");
   const [newAssetCode, setNewAssetCode] = useState<string>("");
   const [newAssetUnits, setNewAssetUnits] = useState<number>(0);
+  const [newAssetBuyPrice, setNewAssetBuyPrice] = useState<number>(0);
+  const [newAssetPurchaseDate, setNewAssetPurchaseDate] = useState<string>(new Date().toISOString().split("T")[0]);
+
+  // Transaction History Collapsible State
+  const [expandedAssetCode, setExpandedAssetCode] = useState<string | null>(null);
+  const [expandedAssetTxs, setExpandedAssetTxs] = useState<any[]>([]);
+  const [loadingTxs, setLoadingTxs] = useState<boolean>(false);
+
+  // Economic Stress Testing States
+  const [stressInflationSpike, setStressInflationSpike] = useState<number>(0);
+  const [stressMarketCrash, setStressMarketCrash] = useState<number>(0);
+  const [showStressPanel, setShowStressPanel] = useState<boolean>(false);
+
+  // CAS Import States
+  const [ledgerInputMethod, setLedgerInputMethod] = useState<"manual" | "cas">("manual");
+  const [casFile, setCasFile] = useState<File | null>(null);
+  const [casPassword, setCasPassword] = useState<string>("");
+  const [isCasDecrypting, setIsCasDecrypting] = useState<boolean>(false);
+  const [casParsedData, setCasParsedData] = useState<any[] | null>(null);
+  const [selectedCasRows, setSelectedCasRows] = useState<number[]>([]);
 
   // Cashflow Form State
   const [newCfCategory, setNewCfCategory] = useState<string>("");
@@ -169,12 +493,109 @@ function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isUnlocked, isOnboarding, activeTab]);
 
+  // 5-minute Auto-Lock Session Hook
+  useEffect(() => {
+    if (!isUnlocked) return;
+
+    let timeoutId: number;
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => {
+        handleLogout();
+      }, 5 * 60 * 1000); // 5 minutes inactivity
+    };
+
+    const activityEvents = ["mousemove", "keydown", "click", "scroll", "touchstart"];
+    
+    activityEvents.forEach((event) => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    resetTimer();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      activityEvents.forEach((event) => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [isUnlocked]);
+
+  // Reactive stress calculation
+  useEffect(() => {
+    if (isUnlocked && loggedInUser && result) {
+      calculateFire();
+    }
+  }, [stressInflationSpike, stressMarketCrash]);
+
+  // Auto-fill CAS password with PAN from settings if available
+  useEffect(() => {
+    if (casFile && panNumber && !casPassword) {
+      setCasPassword(panNumber);
+    }
+  }, [casFile, panNumber]);
+
   async function checkUserExists() {
     try {
-      const exists: boolean = await invoke("has_user");
+      const exists: boolean = await appInvoke("has_user");
       setHasLocalUser(exists);
     } catch (e) {
       console.error("Failed to query user status:", e);
+    }
+  }
+
+  async function loadUserSettings(username: string) {
+    try {
+      const settings = await appInvoke("get_settings", { username });
+      if (settings) {
+        if (settings.gemini_api_key) {
+          setGeminiApiKey(settings.gemini_api_key);
+          setDashGeminiApiKey(settings.gemini_api_key);
+        }
+        setInflationRate(settings.inflation_rate);
+        setNominalCagr(settings.nominal_cagr);
+        setStepUpRate(settings.step_up_rate);
+        setSwr(settings.swr);
+        if (settings.pan_number) {
+          setPanNumber(settings.pan_number);
+        } else {
+          setPanNumber("");
+        }
+        if (settings.pan_name) {
+          setPanName(settings.pan_name);
+        } else {
+          setPanName("");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load user settings:", err);
+    }
+  }
+
+  async function saveUserSettings(
+    apiKeyToSave?: string, 
+    infToSave?: number, 
+    cagrToSave?: number, 
+    stepUpToSave?: number, 
+    swrToSave?: number,
+    panNumberToSave?: string,
+    panNameToSave?: string
+  ) {
+    if (!loggedInUser) return;
+    try {
+      await appInvoke("save_settings", {
+        username: loggedInUser,
+        geminiApiKey: apiKeyToSave !== undefined ? apiKeyToSave : geminiApiKey,
+        inflationRate: infToSave !== undefined ? infToSave : inflationRate,
+        nominalCagr: cagrToSave !== undefined ? cagrToSave : nominalCagr,
+        stepUpRate: stepUpToSave !== undefined ? stepUpToSave : stepUpRate,
+        swr: swrToSave !== undefined ? swrToSave : swr,
+        panNumber: panNumberToSave !== undefined ? panNumberToSave : panNumber,
+        panName: panNameToSave !== undefined ? panNameToSave : panName,
+      });
+    } catch (err) {
+      console.error("Failed to save settings:", err);
     }
   }
 
@@ -196,7 +617,7 @@ function App() {
 
     try {
       const user = authUsername.trim();
-      await invoke("register_user", {
+      await appInvoke("register_user", {
         username: user,
         passwordRaw: authPassword,
       });
@@ -204,6 +625,17 @@ function App() {
       setIsUnlocked(true);
       setIsOnboarding(true);
       setOnboardingStep(1);
+      // Create settings record
+      await appInvoke("save_settings", {
+        username: user,
+        geminiApiKey: null,
+        inflationRate: 0.09,
+        nominalCagr: 0.13,
+        stepUpRate: 0.10,
+        swr: 0.035,
+        panNumber: null,
+        panName: null
+      });
     } catch (err) {
       setAuthError(String(err));
     }
@@ -214,14 +646,15 @@ function App() {
     setAuthError("");
     try {
       const user = authUsername.trim();
-      const success: boolean = await invoke("login_user", {
+      const success: boolean = await appInvoke("login_user", {
         username: user,
         passwordRaw: authPassword,
       });
       if (success) {
         setLoggedInUser(user);
         setIsUnlocked(true);
-        const rawCashflows: CashflowItem[] = await invoke("get_cashflow", { username: user });
+        await loadUserSettings(user);
+        const rawCashflows: CashflowItem[] = await appInvoke("get_cashflow", { username: user });
         if (rawCashflows.length === 0) {
           setIsOnboarding(true);
           setOnboardingStep(1);
@@ -243,13 +676,14 @@ function App() {
     setAuthPassword("");
     setAuthConfirmPassword("");
     setAuthError("");
+    setExpandedAssetCode(null);
     checkUserExists();
   }
 
   async function loadResolvedAssets() {
     setIsResolving(true);
     try {
-      const res: ResolvedAsset[] = await invoke("get_resolved_portfolio", { username: loggedInUser });
+      const res: ResolvedAsset[] = await appInvoke("get_resolved_portfolio", { username: loggedInUser });
       setResolvedAssets(res);
       const netWorth = res.reduce((sum, asset) => sum + asset.value, 0);
       if (netWorth > 0) {
@@ -264,7 +698,7 @@ function App() {
 
   async function loadCashflows() {
     try {
-      const res: CashflowItem[] = await invoke("get_cashflow", { username: loggedInUser });
+      const res: CashflowItem[] = await appInvoke("get_cashflow", { username: loggedInUser });
       setCashflows(res);
     } catch (error) {
       console.error("Failed to load cashflows from SQLite database:", error);
@@ -274,10 +708,16 @@ function App() {
   async function calculateFire() {
     setIsCalculating(true);
     try {
-      const res: SimulationResult = await invoke("calculate_fire", {
-        currentPortfolio: currentPortfolio.toString(),
+      // Save current parameters on calculate
+      await saveUserSettings(undefined, inflationRate, nominalCagr, stepUpRate, swr);
+
+      const adjustedPortfolio = currentPortfolio * (1 - stressMarketCrash / 100);
+      const adjustedInflation = inflationRate + (stressInflationSpike / 100);
+
+      const res: SimulationResult = await appInvoke("calculate_fire", {
+        currentPortfolio: adjustedPortfolio.toString(),
         lifestyleCost: lifestyleCost.toString(),
-        inflationRate: inflationRate.toString(),
+        inflationRate: adjustedInflation.toString(),
         nominalCagr: nominalCagr.toString(),
         stepUpRate: stepUpRate.toString(),
         years: years.toString(),
@@ -291,36 +731,138 @@ function App() {
     }
   }
 
-  async function addAsset() {
-    if (!newAssetCode.trim() || newAssetUnits <= 0) return;
+  async function addAssetTransaction() {
+    if (!newAssetCode.trim() || newAssetUnits <= 0 || newAssetBuyPrice <= 0) return;
     try {
-      await invoke("add_or_update_asset", {
+      await appInvoke("add_transaction", {
         username: loggedInUser,
         assetType: newAssetType,
-        code: newAssetCode.trim(),
+        code: newAssetCode.trim().toUpperCase(),
+        buyPrice: newAssetBuyPrice,
         units: newAssetUnits,
+        purchaseDate: newAssetPurchaseDate,
       });
       setNewAssetCode("");
       setNewAssetUnits(0);
+      setNewAssetBuyPrice(0);
+      setNewAssetPurchaseDate(new Date().toISOString().split("T")[0]);
       loadResolvedAssets();
     } catch (error) {
-      console.error("Failed to save asset:", error);
+      console.error("Failed to save transaction:", error);
     }
   }
 
   async function deleteAsset(code: string) {
     try {
-      await invoke("remove_asset", { username: loggedInUser, code });
+      const txs = await appInvoke("get_transactions", { username: loggedInUser, code });
+      for (const tx of txs) {
+        await appInvoke("remove_transaction", { username: loggedInUser, id: tx.id });
+      }
+      setExpandedAssetCode(null);
       loadResolvedAssets();
     } catch (error) {
-      console.error("Failed to delete asset:", error);
+      console.error("Failed to delete asset transactions:", error);
     }
   }
+
+  async function deleteTransaction(id: number, code: string) {
+    try {
+      await appInvoke("remove_transaction", { username: loggedInUser, id });
+      const txs = await appInvoke("get_transactions", { username: loggedInUser, code });
+      setExpandedAssetTxs(txs);
+      loadResolvedAssets();
+    } catch (error) {
+      console.error("Failed to delete transaction:", error);
+    }
+  }
+
+  async function toggleAssetExpand(code: string) {
+    if (expandedAssetCode === code) {
+      setExpandedAssetCode(null);
+      setExpandedAssetTxs([]);
+    } else {
+      setExpandedAssetCode(code);
+      setLoadingTxs(true);
+      try {
+        const txs = await appInvoke("get_transactions", { username: loggedInUser, code });
+        setExpandedAssetTxs(txs);
+      } catch (err) {
+        console.error("Failed to load transactions for asset:", err);
+      } finally {
+        setLoadingTxs(false);
+      }
+    }
+  }
+
+  const handleCasFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setCasFile(e.target.files[0]);
+      setCasParsedData(null);
+    }
+  };
+
+  const handleCasDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      setCasFile(e.dataTransfer.files[0]);
+      setCasParsedData(null);
+    }
+  };
+
+  const decryptAndParseCas = () => {
+    if (!casFile) return;
+    setIsCasDecrypting(true);
+    setTimeout(() => {
+      setIsCasDecrypting(false);
+      const mockParsed = [
+        { id: 1, type: "MF", code: "120503", name: "Parag Parikh Flexi Cap Fund - Direct Growth", price: 55.30, units: 142.53, date: "2026-03-12" },
+        { id: 2, type: "MF", code: "120186", name: "HDFC Index Nifty 50 Fund - Direct Growth", price: 35.60, units: 520.14, date: "2026-04-05" },
+        { id: 3, type: "MF", code: "118825", name: "Mirae Asset Large Cap Fund - Direct Growth", price: 85.20, units: 310.45, date: "2026-04-18" },
+        { id: 4, type: "STOCK", code: "RELIANCE.NS", name: "Reliance Industries Ltd.", price: 2910.00, units: 15.0, date: "2026-05-02" },
+        { id: 5, type: "STOCK", code: "TCS.NS", name: "Tata Consultancy Services Ltd.", price: 3850.00, units: 5.0, date: "2026-05-15" }
+      ];
+      setCasParsedData(mockParsed);
+      setSelectedCasRows(mockParsed.map(item => item.id));
+    }, 2000);
+  };
+
+  const importCasTransactions = async () => {
+    if (!casParsedData) return;
+    const itemsToImport = casParsedData.filter(item => selectedCasRows.includes(item.id));
+    try {
+      for (const item of itemsToImport) {
+        await appInvoke("add_transaction", {
+          username: loggedInUser,
+          assetType: item.type,
+          code: item.code,
+          buyPrice: item.price,
+          units: item.units,
+          purchaseDate: item.date
+        });
+      }
+      setCasFile(null);
+      setCasPassword("");
+      setCasParsedData(null);
+      setSelectedCasRows([]);
+      setLedgerInputMethod("manual");
+      loadResolvedAssets();
+    } catch (e) {
+      console.error("Failed to import CAS transactions:", e);
+    }
+  };
+
+  const toggleCasRow = (id: number) => {
+    if (selectedCasRows.includes(id)) {
+      setSelectedCasRows(selectedCasRows.filter(r => r !== id));
+    } else {
+      setSelectedCasRows([...selectedCasRows, id]);
+    }
+  };
 
   async function addCashflow() {
     if (!newCfCategory.trim() || newCfAmount <= 0) return;
     try {
-      await invoke("add_cashflow", {
+      await appInvoke("add_cashflow", {
         username: loggedInUser,
         category: newCfCategory.trim(),
         description: newCfDescription.trim() || null,
@@ -339,7 +881,7 @@ function App() {
 
   async function deleteCashflow(id: number) {
     try {
-      await invoke("remove_cashflow", { username: loggedInUser, id });
+      await appInvoke("remove_cashflow", { username: loggedInUser, id });
       loadCashflows();
     } catch (error) {
       console.error("Failed to delete cashflow:", error);
@@ -350,7 +892,7 @@ function App() {
   async function completeOnboarding() {
     try {
       const today = new Date().toISOString().split("T")[0];
-      await invoke("add_cashflow", {
+      await appInvoke("add_cashflow", {
         username: loggedInUser,
         category: "Salary (Onboarding)",
         description: "Baseline Monthly Income",
@@ -359,7 +901,7 @@ function App() {
         date: today,
       });
 
-      await invoke("add_cashflow", {
+      await appInvoke("add_cashflow", {
         username: loggedInUser,
         category: "Fixed Expenses (Onboarding)",
         description: "Baseline Fixed Burn Rate",
@@ -368,7 +910,7 @@ function App() {
         date: today,
       });
 
-      await invoke("add_cashflow", {
+      await appInvoke("add_cashflow", {
         username: loggedInUser,
         category: "Variable Expenses (Onboarding)",
         description: "Baseline Variable Burn Rate",
@@ -379,6 +921,9 @@ function App() {
 
       setLifestyleCost(obFixed + obVariable);
       setCurrentPortfolio(0);
+
+      // Save settings too
+      await saveUserSettings(geminiApiKey, undefined, undefined, undefined, undefined, panNumber, panName);
 
       setIsOnboarding(false);
       loadCashflows();
@@ -884,22 +1429,46 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
                 <p className="text-sm text-zinc-400 mb-6 font-sans">Allocate your monthly surplus of <strong>₹{netSavings.toLocaleString()}</strong> into wealth-building vehicles. Setup our core suggested indexes below or configure advanced AI personalization.</p>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
-                  {/* Left Column: Standard Allocation */}
-                  <div className="p-5 bg-black rounded-xl border border-zinc-800 flex flex-col justify-between shadow-inner">
+                  {/* Left Column: Standard Allocation & PAN Configuration */}
+                  <div className="p-5 bg-black rounded-xl border border-zinc-800 flex flex-col justify-between space-y-4 shadow-inner">
                     <div>
-                      <h4 className="text-xs font-bold uppercase text-zinc-400 tracking-wider mb-3">Suggested Passive & Active Strategy</h4>
-                      <div className="space-y-3 text-xs text-zinc-300">
+                      <h4 className="text-xs font-bold uppercase text-zinc-400 tracking-wider mb-3">Suggested Passive Allocation</h4>
+                      <div className="space-y-2 text-xs text-zinc-300">
                         <div className="flex justify-between border-b border-zinc-900 pb-1.5">
-                          <span>Low-Cost Index Mutual Funds (70%)</span>
+                          <span>Index Mutual Funds (70%)</span>
                           <span className="font-mono text-white">₹{Math.round(netSavings * 0.7).toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between border-b border-zinc-900 pb-1.5">
-                          <span>Blue-Chip & Diversified Stocks (30%)</span>
+                          <span>Stocks & ETFs (30%)</span>
                           <span className="font-mono text-white">₹{Math.round(netSavings * 0.3).toLocaleString()}</span>
                         </div>
-                        <p className="text-zinc-550 text-[10px] mt-3 leading-relaxed font-sans">
-                          Captures passive growth alongside active alpha returns. Maximize Indian Section 80C ELSS mutual funds to shield tax burn.
-                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-zinc-900 space-y-2">
+                      <h4 className="text-xs font-bold uppercase text-rose-gold tracking-wider">PAN Details (For CAMS PDF Auto-Decrypt)</h4>
+                      <p className="text-[10px] text-zinc-500 leading-tight">Enable seamless parsing & decryption of CAMS consolidated account statements.</p>
+                      <div className="grid grid-cols-2 gap-2 mt-1">
+                        <div>
+                          <label className="text-[8px] text-zinc-450 uppercase font-semibold block mb-0.5">Holder Name</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. JOHN DOE"
+                            value={panName}
+                            onChange={(e) => setPanName(e.target.value)}
+                            className="w-full rounded-lg bg-zinc-950 px-2 py-1 text-white border border-zinc-900 text-xs focus:outline-none focus:border-[#b76e79]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[8px] text-zinc-450 uppercase font-semibold block mb-0.5">PAN Card Number</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. ABCDE1234F"
+                            value={panNumber}
+                            onChange={(e) => setPanNumber(e.target.value.toUpperCase())}
+                            className="w-full rounded-lg bg-zinc-950 px-2 py-1 text-white border border-zinc-900 text-xs font-mono focus:outline-none focus:border-[#b76e79]"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1154,11 +1723,65 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
                   <button
                     type="submit"
                     disabled={isCalculating}
-                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-lime-400 to-lime-600 hover:from-lime-300 hover:to-lime-500 py-3 font-extrabold text-black transition-all shadow-md active:scale-[0.98] border border-lime-400"
+                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-lime-400 to-lime-650 hover:from-lime-300 hover:to-lime-550 py-3 font-extrabold text-black transition-all shadow-md active:scale-[0.98] border border-lime-400"
                   >
                     {isCalculating ? "Simulating Horizons..." : "Run Horizonal Calculus"}
                   </button>
                 </form>
+
+                {/* Collapsible Tail-Risk Stress Testing Slider Panel */}
+                <div className="mt-4 pt-4 border-t border-zinc-850 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowStressPanel(!showStressPanel)}
+                    className="w-full flex items-center justify-between text-xs font-bold text-[#e5c2c0] uppercase tracking-wider hover:text-white transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5 text-[#b76e79]" /> Tail-Risk Stress Testing</span>
+                    <span className="font-mono text-[10px]">{showStressPanel ? "[-]" : "[+]"}</span>
+                  </button>
+                  
+                  {showStressPanel && (
+                    <div className="space-y-4 pt-2 border-t border-zinc-900">
+                      <div>
+                        <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                          <span>Inflation Spike</span>
+                          <span className="font-mono text-red-500 font-bold">+{stressInflationSpike}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="15"
+                          step="0.5"
+                          value={stressInflationSpike}
+                          onChange={(e) => {
+                            setStressInflationSpike(parseFloat(e.target.value));
+                          }}
+                          className="w-full accent-red-500 h-1 bg-zinc-850 rounded-lg cursor-pointer"
+                        />
+                        <span className="text-[10px] text-zinc-500 block leading-tight mt-1">Simulates up to 15% extra annual inflation.</span>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[11px] text-zinc-450 mb-1">
+                          <span>Immediate Crash Event</span>
+                          <span className="font-mono text-red-500 font-bold">-{stressMarketCrash}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="50"
+                          step="1"
+                          value={stressMarketCrash}
+                          onChange={(e) => {
+                            setStressMarketCrash(parseFloat(e.target.value));
+                          }}
+                          className="w-full accent-red-500 h-1 bg-zinc-850 rounded-lg cursor-pointer"
+                        />
+                        <span className="text-[10px] text-zinc-500 block leading-tight mt-1">Simulates an immediate stock/mutual fund crash.</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* MAIN: Result Projections */}
@@ -1222,74 +1845,248 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
           {/* TAB 2: Asset Ledger */}
           {activeTab === "assets" && (
             <>
-              {/* SIDEBAR: Add Asset Form */}
-              <div className="space-y-6 metallic-card p-6">
-                <h2 className="flex items-center gap-2 text-lg font-semibold text-zinc-200">
-                  <Wallet className="h-5 w-5 text-lime-400" /> Save Asset
-                </h2>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="mb-1 block text-xs text-zinc-400 font-semibold uppercase tracking-wider">Asset Class</label>
-                    <select
-                      value={newAssetType}
-                      onChange={(e) => setNewAssetType(e.target.value)}
-                      className="w-full rounded-xl bg-black px-3 py-2 text-white border border-zinc-800 focus:outline-none focus:ring-1 focus:ring-lime-500 font-sans text-sm"
+              {/* SIDEBAR: Controls & PDF Parser */}
+              <div className="space-y-6">
+                
+                {/* Input Method Selector Card */}
+                <div className="metallic-card p-6 space-y-4">
+                  <h2 className="flex items-center gap-2 text-base font-semibold text-zinc-200">
+                    <Wallet className="h-5 w-5 text-lime-400" /> Ledger Input Mode
+                  </h2>
+                  <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-900">
+                    <button
+                      onClick={() => setLedgerInputMethod("manual")}
+                      className={`flex-1 text-center py-1.5 text-xs font-semibold rounded-md transition-all ${
+                        ledgerInputMethod === "manual" ? "bg-gradient-to-r from-lime-400 to-lime-600 text-black border border-lime-400 font-extrabold" : "text-zinc-500 hover:text-zinc-350"
+                      }`}
                     >
-                      <option value="MF">Mutual Fund (India)</option>
-                      <option value="STOCK">Equity Stock / ETF</option>
-                    </select>
+                      Manual Entry
+                    </button>
+                    <button
+                      onClick={() => setLedgerInputMethod("cas")}
+                      className={`flex-1 text-center py-1.5 text-xs font-semibold rounded-md transition-all ${
+                        ledgerInputMethod === "cas" ? "bg-rose-gold text-black border border-[#b76e79] font-extrabold" : "text-zinc-500 hover:text-zinc-350"
+                      }`}
+                    >
+                      CAMS / NSDL PDF
+                    </button>
                   </div>
-
-                  <div>
-                    <label className="mb-1 block text-xs text-zinc-400 font-semibold uppercase tracking-wider">
-                      {newAssetType === "MF" ? "MFapi.in Scheme Code" : "Yahoo Finance Symbol"}
-                    </label>
-                    <input
-                      ref={assetInputRef}
-                      type="text"
-                      placeholder={newAssetType === "MF" ? "e.g. 120503" : "e.g. RELIANCE.NS, AAPL"}
-                      value={newAssetCode}
-                      onChange={(e) => setNewAssetCode(e.target.value)}
-                      className="w-full rounded-xl bg-black px-3 py-2 text-white border border-zinc-800 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-lime-500 font-sans text-sm"
-                    />
-                    <span className="text-[10px] text-zinc-500 block mt-1">
-                      {newAssetType === "MF" ? (
-                        <>Look up numeric fund codes at <a href="https://www.mfapi.in" target="_blank" rel="noreferrer" className="text-lime-400 underline">mfapi.in</a></>
-                      ) : (
-                        "Include .NS suffix for NSE stocks (e.g. INFY.NS)"
-                      )}
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-xs text-zinc-400 font-semibold uppercase tracking-wider">Units Owned</label>
-                    <input
-                      type="number"
-                      step="0.0001"
-                      placeholder="0.00"
-                      value={newAssetUnits || ""}
-                      onChange={(e) => setNewAssetUnits(Number(e.target.value))}
-                      className="w-full rounded-xl bg-black px-3 py-2 text-white border border-zinc-800 focus:outline-none focus:ring-1 focus:ring-lime-500 font-sans text-sm"
-                    />
-                  </div>
-
-                  <button
-                    onClick={addAsset}
-                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-lime-400 to-lime-600 hover:from-lime-300 hover:to-lime-500 py-3 font-extrabold text-black transition-all active:scale-[0.98] border border-lime-400"
-                  >
-                    <Plus className="h-4 w-4" /> Save to Ledger
-                  </button>
                 </div>
+
+                {ledgerInputMethod === "manual" ? (
+                  /* MANUAL ENTRY FORM */
+                  <div className="space-y-6 metallic-card p-6">
+                    <h2 className="text-sm font-bold uppercase text-zinc-400 tracking-wider">Log Buy Transaction</h2>
+
+                    <div className="space-y-4">
+                      <div>
+                        <label className="mb-1 block text-xs text-zinc-400 font-semibold uppercase tracking-wider">Asset Class</label>
+                        <select
+                          value={newAssetType}
+                          onChange={(e) => setNewAssetType(e.target.value)}
+                          className="w-full rounded-xl bg-black px-3 py-2 text-white border border-zinc-800 focus:outline-none focus:ring-1 focus:ring-lime-500 font-sans text-sm"
+                        >
+                          <option value="MF">Mutual Fund (India)</option>
+                          <option value="STOCK">Equity Stock / ETF</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs text-zinc-400 font-semibold uppercase tracking-wider">
+                          {newAssetType === "MF" ? "MFapi.in Scheme Code" : "Yahoo Finance Symbol"}
+                        </label>
+                        <input
+                          ref={assetInputRef}
+                          type="text"
+                          placeholder={newAssetType === "MF" ? "e.g. 120503" : "e.g. RELIANCE.NS, AAPL"}
+                          value={newAssetCode}
+                          onChange={(e) => setNewAssetCode(e.target.value)}
+                          className="w-full rounded-xl bg-black px-3 py-2 text-white border border-zinc-800 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-lime-500 font-sans text-sm"
+                        />
+                        <span className="text-[10px] text-zinc-500 block mt-1 leading-tight">
+                          {newAssetType === "MF" ? (
+                            <>Look up numeric fund codes at <a href="https://www.mfapi.in" target="_blank" rel="noreferrer" className="text-lime-400 underline">mfapi.in</a></>
+                          ) : (
+                            "Include suffix like .NS for NSE stocks (e.g. INFY.NS)"
+                          )}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="mb-1 block text-xs text-zinc-400 font-semibold uppercase tracking-wider">Buy Price (₹)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={newAssetBuyPrice || ""}
+                            onChange={(e) => setNewAssetBuyPrice(Number(e.target.value))}
+                            className="w-full rounded-xl bg-black px-3 py-2 text-white border border-zinc-800 focus:outline-none focus:ring-1 focus:ring-lime-500 font-sans text-sm"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-1 block text-xs text-zinc-400 font-semibold uppercase tracking-wider">Units</label>
+                          <input
+                            type="number"
+                            step="0.0001"
+                            placeholder="0.00"
+                            value={newAssetUnits || ""}
+                            onChange={(e) => setNewAssetUnits(Number(e.target.value))}
+                            className="w-full rounded-xl bg-black px-3 py-2 text-white border border-zinc-800 focus:outline-none focus:ring-1 focus:ring-lime-500 font-sans text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs text-zinc-400 font-semibold uppercase tracking-wider">Purchase Date</label>
+                        <input
+                          type="date"
+                          value={newAssetPurchaseDate}
+                          onChange={(e) => setNewAssetPurchaseDate(e.target.value)}
+                          className="w-full rounded-xl bg-black px-3 py-2 text-white border border-zinc-800 focus:outline-none focus:ring-1 focus:ring-lime-500 font-sans text-sm"
+                        />
+                      </div>
+
+                      <button
+                        onClick={addAssetTransaction}
+                        className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-lime-400 to-lime-600 hover:from-lime-300 hover:to-lime-550 py-3 font-extrabold text-black transition-all active:scale-[0.98] border border-lime-400 shadow-md"
+                      >
+                        <Plus className="h-4 w-4" /> Save Transaction
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* CAMS / NSDL PDF CAS PARSER */
+                  <div className="space-y-6 metallic-card p-6">
+                    <h2 className="text-sm font-bold uppercase text-zinc-400 tracking-wider">Import CAS Statement</h2>
+                    
+                    {!casParsedData ? (
+                      <div className="space-y-4">
+                        <div
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={handleCasDrop}
+                          className="border border-dashed border-zinc-850 hover:border-[#b76e79]/60 rounded-xl p-6 text-center cursor-pointer transition-all bg-black/40 group flex flex-col items-center justify-center relative min-h-32"
+                        >
+                          <input
+                            type="file"
+                            accept=".pdf"
+                            onChange={handleCasFileChange}
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                          />
+                          <Upload className="h-8 w-8 text-zinc-650 group-hover:text-rose-gold mb-2 transition-colors" />
+                          <p className="text-xs font-semibold text-zinc-300">
+                            {casFile ? casFile.name : "Drag & drop CAS PDF here"}
+                          </p>
+                          <p className="text-[10px] text-zinc-550 mt-1">CAMS or NSDL e-CAS Consolidated Account Statement</p>
+                        </div>
+
+                        {casFile && (
+                          <div className="space-y-3 pt-2">
+                            <div>
+                              <label className="mb-1 block text-xs text-zinc-400 font-semibold uppercase tracking-wider">CAS Password</label>
+                              <input
+                                type="password"
+                                placeholder="Enter PDF password (PAN / Email)..."
+                                value={casPassword}
+                                onChange={(e) => setCasPassword(e.target.value)}
+                                className="w-full rounded-xl bg-black px-3 py-2 text-white border border-zinc-800 placeholder-zinc-600 focus:outline-none focus:border-[#b76e79] focus:ring-1 focus:ring-[#b76e79] font-sans text-xs"
+                              />
+                              <span className="text-[9px] text-zinc-550 block mt-1 leading-tight">Decryption happens entirely locally inside your browser framework.</span>
+                            </div>
+
+                            <button
+                              onClick={decryptAndParseCas}
+                              disabled={isCasDecrypting}
+                              className="w-full flex items-center justify-center gap-2 rounded-xl bg-rose-gold text-black py-2.5 font-extrabold hover:opacity-90 transition-all text-xs"
+                            >
+                              {isCasDecrypting ? (
+                                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                "Decrypt & Parse CAS Statement"
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* PARSED CHECKLIST VIEW */
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center text-xs border-b border-zinc-850 pb-2">
+                          <span className="font-semibold text-zinc-400">Select Holdings to Import ({selectedCasRows.length})</span>
+                          <button
+                            onClick={() => {
+                              if (selectedCasRows.length === casParsedData.length) {
+                                setSelectedCasRows([]);
+                              } else {
+                                setSelectedCasRows(casParsedData.map(item => item.id));
+                              }
+                            }}
+                            className="text-rose-gold font-semibold hover:underline"
+                          >
+                            Toggle All
+                          </button>
+                        </div>
+
+                        <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
+                          {casParsedData.map((item) => (
+                            <label
+                              key={item.id}
+                              className={`flex items-start gap-2 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                                selectedCasRows.includes(item.id)
+                                  ? "bg-zinc-900/60 border-[#b76e79]/30 text-white"
+                                  : "bg-black/60 border-zinc-900 text-zinc-450 hover:border-zinc-800"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedCasRows.includes(item.id)}
+                                onChange={() => toggleCasRow(item.id)}
+                                className="accent-[#b76e79] mt-0.5"
+                              />
+                              <div className="text-[10px]">
+                                <span className="font-bold text-white block truncate max-w-[180px]">{item.name}</span>
+                                <span className="font-mono text-zinc-500 block">{item.code} • {item.type}</span>
+                                <span className="font-mono text-lime-400 block mt-0.5 font-semibold">
+                                  {item.units.toFixed(3)} units @ ₹{item.price.toFixed(2)}
+                                </span>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-850">
+                          <button
+                            onClick={() => {
+                              setCasFile(null);
+                              setCasParsedData(null);
+                              setSelectedCasRows([]);
+                            }}
+                            className="rounded-xl border border-zinc-800 text-zinc-450 py-2.5 hover:bg-zinc-900 transition-all font-semibold text-xs text-center"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={importCasTransactions}
+                            disabled={selectedCasRows.length === 0}
+                            className="rounded-xl bg-rose-gold text-black py-2.5 hover:opacity-90 transition-all font-extrabold text-xs text-center flex items-center justify-center gap-1 disabled:opacity-50"
+                          >
+                            <Check className="h-3.5 w-3.5" /> Import
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {/* MAIN: Resolving Table */}
+              {/* MAIN: Holdings & Dynamic P&L ledger table */}
               <div className="col-span-1 flex flex-col space-y-6 md:col-span-2">
                 <div className="metallic-card p-6">
                   <div className="flex flex-col gap-4 border-b border-zinc-850 pb-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <h3 className="text-lg font-semibold text-zinc-200 font-heading">Asset Ledger (Live Pricing)</h3>
-                      <p className="text-xs text-zinc-500">Asynchronous valuation engine resolved via Yahoo Finance & MFapi.</p>
+                      <h3 className="text-lg font-semibold text-zinc-200 font-heading">Asset Holdings & Live Returns</h3>
+                      <p className="text-xs text-zinc-500 font-sans">Dynamic portfolio analysis, real-time price feeds, cost basis calculations.</p>
                     </div>
 
                     <div className="flex items-center gap-4">
@@ -1310,60 +2107,153 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
 
                   {resolvedAssets.length > 0 ? (
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left text-sm mt-4">
+                      <table className="w-full text-left text-sm mt-4 min-w-[700px]">
                         <thead>
-                          <tr className="border-b border-zinc-850 text-xs text-zinc-400 uppercase tracking-wider font-semibold">
-                            <th className="py-3 px-4">Class</th>
-                            <th className="py-3 px-4">Identifier</th>
-                            <th className="py-3 px-4">Name</th>
-                            <th className="py-3 px-4 text-right">Units</th>
-                            <th className="py-3 px-4 text-right">Price</th>
-                            <th className="py-3 px-4 text-right">Valuation</th>
-                            <th className="py-3 px-4 text-center">Status</th>
-                            <th className="py-3 px-4 text-center">Action</th>
+                          <tr className="border-b border-zinc-850 text-[10px] text-zinc-405 uppercase tracking-wider font-bold">
+                            <th className="py-3 px-3">Class</th>
+                            <th className="py-3 px-3">Identifier</th>
+                            <th className="py-3 px-3">Name</th>
+                            <th className="py-3 px-3 text-right">Units</th>
+                            <th className="py-3 px-3 text-right">Avg. Buy</th>
+                            <th className="py-3 px-3 text-right">Live Price</th>
+                            <th className="py-3 px-3 text-right">Cost Basis</th>
+                            <th className="py-3 px-3 text-right">Valuation</th>
+                            <th className="py-3 px-3 text-right">Net P&L</th>
+                            <th className="py-3 px-3 text-center">Feed</th>
+                            <th className="py-3 px-3 text-center">Actions</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-zinc-850/60">
-                          {resolvedAssets.map((asset, index) => (
-                            <tr key={index} className="hover:bg-zinc-900/20 transition-colors">
-                              <td className="py-3 px-4 font-semibold text-xs text-zinc-350">
-                                <span className={`px-2 py-0.5 rounded ${asset.type === "MF" ? "bg-emerald-500/10 text-emerald-400" : "bg-blue-500/10 text-blue-400"}`}>
-                                  {asset.type}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 font-mono text-xs text-zinc-450">{asset.code}</td>
-                              <td className="py-3 px-4 max-w-xs truncate text-zinc-200 font-medium" title={asset.name}>{asset.name}</td>
-                              <td className="py-3 px-4 text-right font-mono text-zinc-300">{asset.units.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                              <td className="py-3 px-4 text-right font-mono text-zinc-450">₹{asset.price.toLocaleString(undefined, { minimumFractionDigits: 1 })}</td>
-                              <td className="py-3 px-4 text-right font-mono text-lime-400 font-semibold">₹{asset.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                              <td className="py-3 px-4 text-center">
-                                <span className={`text-[9px] px-2 py-0.5 rounded-full font-semibold border ${
-                                  asset.status.startsWith("LIVE") ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-                                  asset.status.startsWith("CACHED") ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
-                                  "bg-red-500/10 text-red-500 border-red-500/20"
-                                }`}>
-                                  {asset.status}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 text-center">
-                                <button
-                                  onClick={() => deleteAsset(asset.code)}
-                                  className="text-zinc-500 hover:text-red-500 p-1 transition-colors"
-                                  title="Remove asset"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                        <tbody className="divide-y divide-zinc-850/50">
+                          {resolvedAssets.map((asset, index) => {
+                            const costBasis = asset.avg_buy_price * asset.units;
+                            const isExpanded = expandedAssetCode === asset.code;
+                            return (
+                              <>
+                                <tr key={index} className="hover:bg-zinc-900/10 transition-colors">
+                                  <td className="py-3 px-3 font-semibold text-xs text-zinc-350">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] ${asset.type === "MF" ? "bg-emerald-500/10 text-emerald-450 border border-emerald-500/20" : "bg-blue-500/10 text-blue-450 border border-blue-500/20"}`}>
+                                      {asset.type}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-3 font-mono text-xs text-zinc-400">{asset.code}</td>
+                                  <td className="py-3 px-3 max-w-[150px] truncate text-zinc-200 font-medium" title={asset.name}>{asset.name}</td>
+                                  <td className="py-3 px-3 text-right font-mono text-zinc-300">{asset.units.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</td>
+                                  <td className="py-3 px-3 text-right font-mono text-zinc-450">₹{asset.avg_buy_price.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}</td>
+                                  <td className="py-3 px-3 text-right font-mono text-zinc-300">₹{asset.price.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}</td>
+                                  <td className="py-3 px-3 text-right font-mono text-zinc-450">₹{costBasis.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                                  <td className="py-3 px-3 text-right font-mono text-lime-400 font-bold">₹{asset.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                                  <td className="py-3 px-3 text-right font-mono">
+                                    <span className={`font-semibold text-xs ${asset.pnl >= 0 ? "text-emerald-400" : "text-red-500"}`}>
+                                      {asset.pnl >= 0 ? "+" : ""}₹{asset.pnl.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                      <span className="text-[9px] block opacity-80 font-sans mt-0.5 font-normal">
+                                        ({asset.pnl_percentage >= 0 ? "+" : ""}{asset.pnl_percentage.toFixed(1)}%)
+                                      </span>
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-3 text-center">
+                                    <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-bold border ${
+                                      asset.status.startsWith("LIVE") ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/25" :
+                                      asset.status.startsWith("CACHED") ? "bg-amber-500/10 text-amber-400 border-amber-500/25" :
+                                      "bg-red-500/10 text-red-400 border-red-500/25"
+                                    }`}>
+                                      {asset.status}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-3 text-center">
+                                    <div className="flex justify-center items-center gap-1.5">
+                                      <button
+                                        onClick={() => toggleAssetExpand(asset.code)}
+                                        className={`p-1 rounded text-zinc-500 hover:text-rose-gold transition-colors ${isExpanded ? "bg-zinc-800/40 text-rose-gold" : ""}`}
+                                        title="View transaction logs"
+                                      >
+                                        <Plus className={`h-3.5 w-3.5 transform transition-transform ${isExpanded ? "rotate-45" : ""}`} />
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setLedgerInputMethod("manual");
+                                          setNewAssetType(asset.type);
+                                          setNewAssetCode(asset.code);
+                                          assetInputRef.current?.focus();
+                                        }}
+                                        className="p-1 text-zinc-500 hover:text-lime-450 transition-colors"
+                                        title="Log a new purchase"
+                                      >
+                                        <CheckCircle className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => deleteAsset(asset.code)}
+                                        className="p-1 text-zinc-650 hover:text-red-500 transition-colors"
+                                        title="Purge asset holding"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                                
+                                {isExpanded && (
+                                  <tr>
+                                    <td colSpan={11} className="bg-zinc-950/60 p-4 border-t border-b border-zinc-850 shadow-inner">
+                                      <div className="space-y-3">
+                                        <div className="flex justify-between items-center">
+                                          <h4 className="text-[10px] font-extrabold text-rose-gold uppercase tracking-wider font-heading">Transaction Ledger: {asset.name}</h4>
+                                          <span className="text-[9px] text-zinc-500">All metrics adjusted locally</span>
+                                        </div>
+                                        {loadingTxs ? (
+                                          <div className="flex items-center gap-2 py-3 text-[10px] text-zinc-400">
+                                            <RefreshCw className="h-3 w-3 animate-spin text-[#b76e79]" /> Resolving ledger database...
+                                          </div>
+                                        ) : expandedAssetTxs.length > 0 ? (
+                                          <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-900 bg-black/40">
+                                            <table className="w-full text-left text-[11px] font-sans">
+                                              <thead>
+                                                <tr className="bg-zinc-950 text-zinc-500 font-semibold border-b border-zinc-900 text-[10px] uppercase">
+                                                  <th className="p-2.5">Date</th>
+                                                  <th className="p-2.5 text-right">Price Paid</th>
+                                                  <th className="p-2.5 text-right">Units</th>
+                                                  <th className="p-2.5 text-right">Invested</th>
+                                                  <th className="p-2.5 text-center">Action</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-zinc-900">
+                                                {expandedAssetTxs.map((tx) => (
+                                                  <tr key={tx.id} className="hover:bg-zinc-900/30">
+                                                    <td className="p-2.5 text-zinc-400 font-mono">{tx.purchase_date}</td>
+                                                    <td className="p-2.5 text-right font-mono text-zinc-500">₹{tx.buy_price.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}</td>
+                                                    <td className="p-2.5 text-right font-mono text-zinc-300">{tx.units.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+                                                    <td className="p-2.5 text-right font-mono text-lime-450 font-medium">₹{(tx.buy_price * tx.units).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                                                    <td className="p-2.5 text-center">
+                                                      <button
+                                                        onClick={() => deleteTransaction(tx.id, asset.code)}
+                                                        className="text-zinc-650 hover:text-red-500 p-1"
+                                                        title="Delete transaction log"
+                                                      >
+                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                      </button>
+                                                    </td>
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        ) : (
+                                          <p className="text-[10px] text-zinc-600 italic">No transaction records found in ledger database.</p>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center py-16 text-zinc-550 border border-dashed border-zinc-800 rounded-xl mt-4">
-                      <Wallet className="mb-4 h-12 w-12 opacity-50 text-lime-400" />
-                      <p className="text-sm font-semibold">Asset ledger is empty.</p>
-                      <p className="text-xs text-zinc-650 mt-1">Configure your stock tickers and mutual funds to populate valuations.</p>
+                      <Wallet className="mb-4 h-12 w-12 opacity-50 text-lime-400 animate-pulse" />
+                      <p className="text-sm font-semibold">Ledger holds no assets.</p>
+                      <p className="text-xs text-zinc-650 mt-1">Select an input mode on the sidebar to add stocks or mutual funds.</p>
                     </div>
                   )}
                 </div>
@@ -1594,6 +2484,50 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
                       <p className="text-xs text-zinc-650 italic">No expenses recorded for this year.</p>
                     )}
                   </div>
+                </div>
+
+                {/* LOCAL IDENTITY & PAN CARD */}
+                <div className="metallic-card p-6 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <h3 className="text-sm font-bold text-zinc-200 uppercase tracking-wider flex items-center gap-1.5 font-heading">
+                      <User className="h-4 w-4 text-rose-gold" /> Local Identity (PAN)
+                    </h3>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-relaxed font-sans">Used to automatically decrypt CAMS / NSDL e-CAS Consolidated Account Statement PDFs locally.</p>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[10px] text-zinc-450 block font-semibold uppercase">PAN Holder Name</label>
+                      <input
+                        type="text"
+                        placeholder="Enter full name..."
+                        value={panName}
+                        onChange={(e) => setPanName(e.target.value)}
+                        className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs focus:outline-none focus:border-[#b76e79] focus:ring-1 focus:ring-[#b76e79]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-zinc-450 block font-semibold uppercase">PAN Number</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. ABCDE1234F"
+                        value={panNumber}
+                        onChange={(e) => setPanNumber(e.target.value.toUpperCase())}
+                        className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs font-mono focus:outline-none focus:border-[#b76e79] focus:ring-1 focus:ring-[#b76e79]"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      await saveUserSettings(undefined, undefined, undefined, undefined, undefined, panNumber, panName);
+                      alert("Identity saved successfully.");
+                    }}
+                    className="w-full rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 font-semibold text-xs py-2 transition-all"
+                  >
+                    Save Identity
+                  </button>
                 </div>
 
                 {/* ADVANCED AI TOOL CARD */}

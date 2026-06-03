@@ -115,15 +115,18 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             calculate_fire,
             db::get_assets,
-            db::add_or_update_asset,
-            db::remove_asset,
+            db::get_transactions,
+            db::add_transaction,
+            db::remove_transaction,
             db::get_cashflow,
             db::add_cashflow,
             db::remove_cashflow,
             market::get_resolved_portfolio,
             db::has_user,
             db::register_user,
-            db::login_user
+            db::login_user,
+            db::get_settings,
+            db::save_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

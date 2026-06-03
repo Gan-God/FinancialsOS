@@ -19,6 +19,9 @@ pub struct ResolvedAsset {
     pub value: f64,
     pub date: String,
     pub status: String,
+    pub avg_buy_price: f64,
+    pub pnl: f64,
+    pub pnl_percentage: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -217,6 +220,9 @@ pub async fn get_resolved_portfolio(app_handle: tauri::AppHandle, username: Stri
         }
 
         let value = resolved_price * asset.units;
+        let total_cost = asset.avg_buy_price * asset.units;
+        let pnl = value - total_cost;
+        let pnl_percentage = if total_cost > 0.0 { (pnl / total_cost) * 100.0 } else { 0.0 };
 
         resolved_assets.push(ResolvedAsset {
             asset_type: asset.asset_type,
@@ -227,6 +233,9 @@ pub async fn get_resolved_portfolio(app_handle: tauri::AppHandle, username: Stri
             value,
             date: resolved_date,
             status,
+            avg_buy_price: asset.avg_buy_price,
+            pnl,
+            pnl_percentage,
         });
     }
 
