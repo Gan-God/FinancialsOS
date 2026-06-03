@@ -131,7 +131,7 @@ tab1, tab2 = st.tabs(["📊 Live Assets Tracking Ledger", "🧮 Pure Numerical S
 
 with tab1:
     if not df_assets.empty:
-        st.dataframe(df_assets, use_container_width=True)
+        st.dataframe(df_assets, width='stretch')
     else:
         st.info("Your portfolio is currently empty. Add assets using the Portfolio Manager in the sidebar.")
 
@@ -139,4 +139,4 @@ with tab2:
     st.dataframe(df_simulation.style.format({
         "Nominal_Value": "₹{:,.2f}", 
         "Real_Value": "₹{:,.2f}"
-    }), use_container_width=True)
+    }), width='stretch')
