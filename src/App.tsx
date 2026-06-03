@@ -352,6 +352,7 @@ function App() {
   const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
   const [loggedInUser, setLoggedInUser] = useState<string>("");
   const [hasLocalUser, setHasLocalUser] = useState<boolean>(false);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authUsername, setAuthUsername] = useState<string>("");
   const [authPassword, setAuthPassword] = useState<string>("");
   const [authConfirmPassword, setAuthConfirmPassword] = useState<string>("");
@@ -540,6 +541,11 @@ function App() {
     try {
       const exists: boolean = await appInvoke("has_user");
       setHasLocalUser(exists);
+      if (!exists) {
+        setAuthMode("register");
+      } else {
+        setAuthMode("login");
+      }
     } catch (e) {
       console.error("Failed to query user status:", e);
     }
@@ -1103,6 +1109,8 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
   // RENDER AUTHENTICATION LAYER
   // ---------------------------------------------------------
   if (!isUnlocked) {
+    const isLogin = authMode === "login";
+
     return (
       <div className="min-h-screen metallic-bg flex flex-col items-center justify-center p-6 selection:bg-lime-500/20 text-white relative overflow-hidden">
         
@@ -1112,10 +1120,12 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
               <Shield className="h-8 w-8 text-lime-400" />
             </div>
             <h1 className="text-3xl font-extrabold tracking-tight text-chrome-silver font-heading">FinancialsOS</h1>
-            <p className="text-rose-gold text-xs uppercase tracking-widest mt-1.5 font-extrabold">Vault Authentication</p>
+            <p className="text-rose-gold text-xs uppercase tracking-widest mt-1.5 font-extrabold">
+              {isLogin ? "Vault Authentication" : "Create Private Vault"}
+            </p>
           </div>
 
-          <form onSubmit={hasLocalUser ? handleLogin : handleRegister} className="space-y-5">
+          <form onSubmit={isLogin ? handleLogin : handleRegister} className="space-y-5">
             <div>
               <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block mb-1">Username</label>
               <div className="relative">
@@ -1144,7 +1154,7 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
               </div>
             </div>
 
-            {!hasLocalUser && (
+            {!isLogin && (
               <div>
                 <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block mb-1">Confirm Password</label>
                 <div className="relative">
@@ -1171,7 +1181,7 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
               type="submit"
               className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-lime-400 via-lime-500 to-lime-600 hover:from-lime-300 hover:to-lime-500 py-3 font-extrabold text-black transition-all shadow-lg shadow-lime-900/30 active:scale-[0.98] border border-lime-400"
             >
-              {hasLocalUser ? (
+              {isLogin ? (
                 <>
                   <Lock className="h-4 w-4" /> Unlock Vault
                 </>
@@ -1183,11 +1193,28 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
             </button>
           </form>
 
-          <div className="mt-8 text-center text-xs text-zinc-500">
-            {hasLocalUser ? (
-              <p className="text-zinc-450">Chrome-Silver cryptography ensures zero-leak security.</p>
+          {hasLocalUser && (
+            <div className="mt-4 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode(isLogin ? "register" : "login");
+                  setAuthError("");
+                  setAuthPassword("");
+                  setAuthConfirmPassword("");
+                }}
+                className="text-xs font-semibold text-rose-gold hover:underline transition-all"
+              >
+                {isLogin ? "Need a new vault? Register another user" : "Already have a vault? Log in instead"}
+              </button>
+            </div>
+          )}
+
+          <div className="mt-6 text-center text-xs text-zinc-500 border-t border-zinc-900/30 pt-4">
+            {isLogin ? (
+              <p className="text-zinc-550">Chrome-Silver cryptography ensures zero-leak security.</p>
             ) : (
-              <p className="text-zinc-450">No database detected. Input a local key to encrypt SQLite files.</p>
+              <p className="text-zinc-550 font-sans leading-tight">No database detected or creating secondary user. Input local credentials to encrypt your SQLite files.</p>
             )}
           </div>
         </div>
