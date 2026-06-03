@@ -34,6 +34,8 @@ pub struct SettingsItem {
     pub pan_number: Option<String>,
     pub pan_name: Option<String>,
     pub theme: Option<String>,
+    pub system_instruction: Option<String>,
+    pub custom_prompt: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -90,16 +92,20 @@ pub fn init_db(app_handle: &tauri::AppHandle) -> Result<(), String> {
             swr REAL NOT NULL,
             pan_number TEXT,
             pan_name TEXT,
-            theme TEXT
+            theme TEXT,
+            system_instruction TEXT,
+            custom_prompt TEXT
         )",
         [],
     )
     .map_err(|e| format!("Failed to create settings table: {}", e))?;
 
-    // Alter table to add PAN and theme columns if they are not already there
+    // Alter table to add PAN, theme, and AI columns if they are not already there
     let _ = conn.execute("ALTER TABLE settings ADD COLUMN pan_number TEXT", []);
     let _ = conn.execute("ALTER TABLE settings ADD COLUMN pan_name TEXT", []);
     let _ = conn.execute("ALTER TABLE settings ADD COLUMN theme TEXT", []);
+    let _ = conn.execute("ALTER TABLE settings ADD COLUMN system_instruction TEXT", []);
+    let _ = conn.execute("ALTER TABLE settings ADD COLUMN custom_prompt TEXT", []);
 
     // Create cashflow table
     conn.execute(
@@ -361,7 +367,7 @@ pub fn get_settings(app_handle: tauri::AppHandle, username: String) -> Result<Op
     let clean_user = username.trim().to_lowercase();
 
     let mut stmt = conn
-        .prepare("SELECT username, gemini_api_key, inflation_rate, nominal_cagr, step_up_rate, swr, pan_number, pan_name, theme FROM settings WHERE username = ?1")
+        .prepare("SELECT username, gemini_api_key, inflation_rate, nominal_cagr, step_up_rate, swr, pan_number, pan_name, theme, system_instruction, custom_prompt FROM settings WHERE username = ?1")
         .map_err(|e| format!("SQL preparation error: {}", e))?;
 
     let mut rows = stmt
@@ -378,6 +384,8 @@ pub fn get_settings(app_handle: tauri::AppHandle, username: String) -> Result<Op
         let pan_number: Option<String> = row.get(6).map_err(|e| e.to_string())?;
         let pan_name: Option<String> = row.get(7).map_err(|e| e.to_string())?;
         let theme: Option<String> = row.get(8).map_err(|e| e.to_string())?;
+        let system_instruction: Option<String> = row.get(9).map_err(|e| e.to_string())?;
+        let custom_prompt: Option<String> = row.get(10).map_err(|e| e.to_string())?;
 
         Ok(Some(SettingsItem {
             username,
@@ -389,6 +397,8 @@ pub fn get_settings(app_handle: tauri::AppHandle, username: String) -> Result<Op
             pan_number,
             pan_name,
             theme,
+            system_instruction,
+            custom_prompt,
         }))
     } else {
         Ok(None)
@@ -407,6 +417,8 @@ pub fn save_settings(
     pan_number: Option<String>,
     pan_name: Option<String>,
     theme: Option<String>,
+    system_instruction: Option<String>,
+    custom_prompt: Option<String>,
 ) -> Result<(), String> {
     let db_path = get_db_path(&app_handle)?;
     let conn = Connection::open(&db_path)
@@ -421,9 +433,11 @@ pub fn save_settings(
     let clean_pan_number = pan_number.map(|p| p.trim().to_uppercase().to_string()).filter(|p| !p.is_empty());
     let clean_pan_name = pan_name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
     let clean_theme = theme.map(|t| t.trim().to_lowercase().to_string()).filter(|t| !t.is_empty());
+    let clean_system_instruction = system_instruction.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let clean_custom_prompt = custom_prompt.map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
 
     conn.execute(
-        "INSERT OR REPLACE INTO settings (username, gemini_api_key, inflation_rate, nominal_cagr, step_up_rate, swr, pan_number, pan_name, theme) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT OR REPLACE INTO settings (username, gemini_api_key, inflation_rate, nominal_cagr, step_up_rate, swr, pan_number, pan_name, theme, system_instruction, custom_prompt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             clean_user,
             clean_key,
@@ -433,7 +447,9 @@ pub fn save_settings(
             swr,
             clean_pan_number,
             clean_pan_name,
-            clean_theme
+            clean_theme,
+            clean_system_instruction,
+            clean_custom_prompt
         ],
     )
     .map_err(|e| format!("Failed to save settings: {}", e))?;
