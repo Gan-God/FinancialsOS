@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AreaChart, Area, BarChart, Bar, Legend, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { Activity, Target, Shield, Wallet, Plus, Trash2, ArrowUpRight, ArrowDownRight, BarChart3, RefreshCw, Lock, Key, UserPlus, User, CheckCircle, ChevronRight, Brain, LogOut, Upload, Check, AlertTriangle, Sun, Moon, Keyboard } from "lucide-react";
+import { Activity, Target, Shield, ShieldCheck, ShieldAlert, Wallet, Plus, Trash2, ArrowUpRight, ArrowDownRight, BarChart3, RefreshCw, Lock, Key, UserPlus, CheckCircle, ChevronRight, Brain, LogOut, Upload, Check, AlertTriangle, Sun, Moon, Keyboard, Settings } from "lucide-react";
 import "./App.css";
 
 interface SimulationResult {
@@ -359,7 +359,24 @@ function App() {
   const [authError, setAuthError] = useState<string>("");
 
   // Navigation State
-  const [activeTab, setActiveTab] = useState<"horizon" | "assets" | "cashflow" | "analytics">("horizon");
+  const [activeTab, setActiveTab] = useState<"horizon" | "assets" | "cashflow" | "analytics" | "settings" | "ai">("horizon");
+
+  // Custom AI State
+  const [systemInstruction, setSystemInstruction] = useState<string>(
+    "You are an expert financial advisor specializing in Indian tax codes, TDS rules, labor laws, NPS, Mutual Funds, and Stocks. Provide clear, highly mathematical, and actionable advice."
+  );
+  const [customPrompt, setCustomPrompt] = useState<string>(
+    `Analyze the user's financial profile:
+- Monthly Income: ₹{income}
+- Monthly Expenses: ₹{expenses}
+- Target FIRE Net Worth: ₹{target}
+- Active Portfolio Worth: ₹{portfolio}
+- Lifestyle Cost: ₹{lifestyle}
+- Horizon Timeline: {years} Years
+- Inflation Rate: {inflation}%, Nominal CAGR: {cagr}%, SWR: {swr}%
+
+Recommend specific tax optimization paths (Section 80C, 80D, 80CCD(1B)), EPF/NPS limits, and an optimal equity-to-debt asset allocation. Keep it analytical and structured.`
+  );
 
   // Onboarding Flow State
   const [isOnboarding, setIsOnboarding] = useState<boolean>(false);
@@ -377,10 +394,7 @@ function App() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [showShortcutsModal, setShowShortcutsModal] = useState<boolean>(false);
 
-  // Advanced AI Dashboard State
-  const [dashGeminiApiKey, setDashGeminiApiKey] = useState<string>("");
-  const [dashAiAnalysis, setDashAiAnalysis] = useState<string>("");
-  const [dashAiLoading, setDashAiLoading] = useState<boolean>(false);
+  // (Removed unused Advanced AI Dashboard States for v0.1.4)
 
   // Horizon State
   const [currentPortfolio, setCurrentPortfolio] = useState<number>(500000);
@@ -571,7 +585,6 @@ function App() {
       if (settings) {
         if (settings.gemini_api_key) {
           setGeminiApiKey(settings.gemini_api_key);
-          setDashGeminiApiKey(settings.gemini_api_key);
         }
         setInflationRate(settings.inflation_rate);
         setNominalCagr(settings.nominal_cagr);
@@ -592,6 +605,12 @@ function App() {
         } else {
           setTheme("dark");
         }
+        if (settings.system_instruction) {
+          setSystemInstruction(settings.system_instruction);
+        }
+        if (settings.custom_prompt) {
+          setCustomPrompt(settings.custom_prompt);
+        }
       }
     } catch (err) {
       console.error("Failed to load user settings:", err);
@@ -606,7 +625,9 @@ function App() {
     swrToSave?: number,
     panNumberToSave?: string,
     panNameToSave?: string,
-    themeToSave?: string
+    themeToSave?: string,
+    systemInstructionToSave?: string,
+    customPromptToSave?: string
   ) {
     if (!loggedInUser) return;
     try {
@@ -620,6 +641,8 @@ function App() {
         panNumber: panNumberToSave !== undefined ? panNumberToSave : panNumber,
         panName: panNameToSave !== undefined ? panNameToSave : panName,
         theme: themeToSave !== undefined ? themeToSave : theme,
+        systemInstruction: systemInstructionToSave !== undefined ? systemInstructionToSave : systemInstruction,
+        customPrompt: customPromptToSave !== undefined ? customPromptToSave : customPrompt,
       });
     } catch (err) {
       console.error("Failed to save settings:", err);
@@ -961,28 +984,30 @@ function App() {
     }
   }
 
-  // Trigger Gemini AI Call during onboarding
-  async function runAiAvenuesAnalysis() {
-    if (!geminiApiKey.trim()) return;
+  // Trigger Custom Gemini AI Call in the new AI tab
+  async function runCustomAiAnalysis() {
+    if (!geminiApiKey.trim()) {
+      alert("Please configure a valid Gemini API Key first.");
+      return;
+    }
     setAiLoading(true);
     setAiAnalysis("");
     try {
-      const targetStr = obCustomFireTarget > 0 ? obCustomFireTarget : normalFireNum;
-      const savingsRateVal = obIncome > 0 ? (((obIncome - (obFixed + obVariable)) / obIncome) * 100).toFixed(1) : "0";
-
-      const prompt = `You are a financial advisor expert in Indian tax codes, TDS, labor laws, NPS, Mutual Funds, and Stocks.
-A user has the following profile:
-- Monthly Income: Rs. ${obIncome}
-- Monthly Fixed Expenses: Rs. ${obFixed}
-- Monthly Variable Expenses: Rs. ${obVariable}
-- Current Savings Rate: ${savingsRateVal}%
-- Chosen FIRE Target Net Worth: Rs. ${targetStr.toLocaleString()}
-
-Recommend:
-1. Savings avenues in India to optimize taxes (specifically under Section 80C, 80D, and NPS Section 80CCD(1B)).
-2. Asset Allocation strategy between Equity Mutual Funds, Debt, NPS, and Stocks based on their cashflow.
-3. TDS and Labor Law benefits (e.g. EPF/PF employer contributions, Gratuity, and CTC structure optimization).
-Keep it extremely structured, concise, and highly actionable.`;
+      const activeNetWorth = ledgerNetWorth > 0 ? ledgerNetWorth : currentPortfolio;
+      const computedIncome = cashflows.filter(c => c.flow_type === "INCOME").reduce((s, c) => s + c.amount, 0);
+      const computedExpense = cashflows.filter(c => c.flow_type === "EXPENSE").reduce((s, c) => s + c.amount, 0);
+      
+      const parsedPrompt = customPrompt
+        .replace(/{username}/g, loggedInUser || "")
+        .replace(/{portfolio}/g, activeNetWorth.toLocaleString())
+        .replace(/{lifestyle}/g, lifestyleCost.toLocaleString())
+        .replace(/{years}/g, years.toString())
+        .replace(/{inflation}/g, (inflationRate * 100).toFixed(1))
+        .replace(/{cagr}/g, (nominalCagr * 100).toFixed(1))
+        .replace(/{swr}/g, (swr * 100).toFixed(2))
+        .replace(/{income}/g, computedIncome.toLocaleString())
+        .replace(/{expenses}/g, computedExpense.toLocaleString())
+        .replace(/{target}/g, normalFireNum.toLocaleString());
 
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey.trim()}`,
@@ -990,13 +1015,16 @@ Keep it extremely structured, concise, and highly actionable.`;
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
+            contents: [{ parts: [{ text: parsedPrompt }] }],
+            systemInstruction: { parts: [{ text: systemInstruction }] }
           }),
         }
       );
 
       const data = await response.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "Failed to receive advice from Gemini. Please check your API key.";
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 
+                   data.error?.message || 
+                   "Failed to receive advice from Gemini. Please check your API key.";
       setAiAnalysis(text);
     } catch (e) {
       setAiAnalysis(`Error communicating with Gemini API: ${e}`);
@@ -1005,47 +1033,23 @@ Keep it extremely structured, concise, and highly actionable.`;
     }
   }
 
-  // Trigger Gemini AI Call in Dashboard (Advanced Panel)
-  async function runDashboardAiAnalysis() {
-    if (!dashGeminiApiKey.trim()) return;
-    setDashAiLoading(true);
-    setDashAiAnalysis("");
-    try {
-      const activeNetWorth = ledgerNetWorth > 0 ? ledgerNetWorth : currentPortfolio;
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${dashGeminiApiKey.trim()}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `You are an expert continuous calculus financial engine advisor.
-Generate an advanced wealth recommendation report for user "${loggedInUser}":
-- Total Current Portfolio/Ledger Worth: ₹${activeNetWorth.toLocaleString()}
-- Monthly Lifestyle Cost target: ₹${lifestyleCost.toLocaleString()}
-- Horizon timeline set: ${years} Years
-- Inflation: ${(inflationRate * 100).toFixed(1)}%, Nominal CAGR: ${(nominalCagr * 100).toFixed(1)}%, SWR: ${(swr * 100).toFixed(2)}%
-
-Suggest:
-1. Precise allocation in Equity Mutual Funds vs Active Stocks to beat the ${(inflationRate * 100).toFixed(1)}% inflation deflator.
-2. Under Indian Income Tax regimes, detail optimization routes for a net worth of ₹${activeNetWorth.toLocaleString()}.
-3. Gratuity and EPF/NPS limits for wealth preservation.
-Keep it highly analytical, mathematically sound, and formatted cleanly.`
-              }]
-            }],
-          }),
-        }
-      );
-
-      const data = await response.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "Failed to receive advice from Gemini. Please check your API key.";
-      setDashAiAnalysis(text);
-    } catch (e) {
-      setDashAiAnalysis(`Error: ${e}`);
-    } finally {
-      setDashAiLoading(false);
+  function renderShieldIcon(sizeClass: string = "h-8 w-8") {
+    if (!isUnlocked) {
+      return <span title="Session Locked"><ShieldAlert className={`${sizeClass} text-red-500 animate-pulse`} /></span>;
     }
+    if (isOnboarding) {
+      return <span title="Onboarding Setup Incomplete"><Shield className={`${sizeClass} text-amber-400 animate-pulse`} /></span>;
+    }
+    if (activeTab === "settings") {
+      return <span title="System Settings Configuration"><ShieldAlert className={`${sizeClass} text-indigo-500`} /></span>;
+    }
+    if (!panNumber || panNumber.trim().length === 0) {
+      return <span title="Identity Warning: PAN details missing"><ShieldAlert className={`${sizeClass} text-amber-500`} /></span>;
+    }
+    if (!geminiApiKey || geminiApiKey.trim().length === 0) {
+      return <span title="AI Warning: Gemini API Key missing"><ShieldAlert className={`${sizeClass} text-orange-400`} /></span>;
+    }
+    return <span title="Vault Secure & Active"><ShieldCheck className={`${sizeClass} text-lime-400`} /></span>;
   }
 
   // Calculations for Onboarding On-the-fly Results
@@ -1139,7 +1143,7 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
         <div className="w-full max-w-md metallic-card p-8 relative shadow-2xl z-10 border border-zinc-700/40">
           <div className="flex flex-col items-center mb-8">
             <div className="h-16 w-16 bg-lime-500/10 rounded-2xl flex items-center justify-center border border-lime-500/25 mb-4 shadow-inner">
-              <Shield className="h-8 w-8 text-lime-400" />
+              {renderShieldIcon("h-8 w-8")}
             </div>
             <h1 className="text-3xl font-extrabold tracking-tight text-chrome-silver font-heading">FinancialsOS</h1>
             <p className="text-rose-gold text-xs uppercase tracking-widest mt-1.5 font-extrabold">
@@ -1254,7 +1258,7 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
         {/* Header */}
         <header className="flex justify-between items-center border-b border-zinc-900 pb-4 relative z-10">
           <div className="flex items-center gap-2">
-            <Shield className="h-6 w-6 text-lime-400" />
+            {renderShieldIcon("h-6 w-6")}
             <span className="font-extrabold tracking-tight font-heading text-lg text-chrome-silver">FinancialsOS</span>
             <span className="rounded bg-zinc-950 text-[9px] border border-zinc-800 text-rose-gold px-2.5 py-0.5 uppercase font-bold">Onboarding Journey</span>
           </div>
@@ -1469,104 +1473,56 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
             </div>
           )}
 
-          {/* STEP 4: iii. Savings Avenues & Advanced AI Features */}
+          {/* STEP 4: iii. Savings Avenues */}
           {onboardingStep === 4 && (
-            <div className="metallic-card p-8 flex flex-col justify-between w-full max-w-3xl mx-auto space-y-6">
+            <div className="metallic-card p-8 flex flex-col justify-between w-full max-w-2xl mx-auto space-y-6">
               <div>
                 <span className="text-xs font-bold text-rose-gold uppercase tracking-wider bg-[#b76e79]/10 px-2.5 py-1 rounded-full border border-[#b76e79]/20">iii. Investment Avenues</span>
                 <h2 className="text-2xl font-extrabold text-white mt-4 mb-2 font-heading">Avenues for Higher Savings</h2>
-                <p className="text-sm text-zinc-400 mb-6 font-sans">Allocate your monthly surplus of <strong>₹{netSavings.toLocaleString()}</strong> into wealth-building vehicles. Setup our core suggested indexes below or configure advanced AI personalization.</p>
+                <p className="text-sm text-zinc-400 mb-6 font-sans">Allocate your monthly surplus of <strong>₹{netSavings.toLocaleString()}</strong> into wealth-building vehicles. Setup our core suggested indexes below.</p>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
-                  {/* Left Column: Standard Allocation & PAN Configuration */}
-                  <div className="p-5 bg-black rounded-xl border border-zinc-800 flex flex-col justify-between space-y-4 shadow-inner">
-                    <div>
-                      <h4 className="text-xs font-bold uppercase text-zinc-400 tracking-wider mb-3">Suggested Passive Allocation</h4>
-                      <div className="space-y-2 text-xs text-zinc-300">
-                        <div className="flex justify-between border-b border-zinc-900 pb-1.5">
-                          <span>Index Mutual Funds (70%)</span>
-                          <span className="font-mono text-white">₹{Math.round(netSavings * 0.7).toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between border-b border-zinc-900 pb-1.5">
-                          <span>Stocks & ETFs (30%)</span>
-                          <span className="font-mono text-white">₹{Math.round(netSavings * 0.3).toLocaleString()}</span>
-                        </div>
+                <div className="p-6 bg-black rounded-xl border border-zinc-800 space-y-6 shadow-inner">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase text-zinc-400 tracking-wider mb-3">Suggested Passive Allocation</h4>
+                    <div className="space-y-2 text-xs text-zinc-300">
+                      <div className="flex justify-between border-b border-zinc-900 pb-2">
+                        <span>Index Mutual Funds (70%)</span>
+                        <span className="font-mono text-white">₹{Math.round(netSavings * 0.7).toLocaleString()}</span>
                       </div>
-                    </div>
-
-                    <div className="pt-3 border-t border-zinc-900 space-y-2">
-                      <h4 className="text-xs font-bold uppercase text-rose-gold tracking-wider">PAN Details (For CAMS PDF Auto-Decrypt)</h4>
-                      <p className="text-[10px] text-zinc-500 leading-tight">Enable seamless parsing & decryption of CAMS consolidated account statements.</p>
-                      <div className="grid grid-cols-2 gap-2 mt-1">
-                        <div>
-                          <label className="text-[8px] text-zinc-450 uppercase font-semibold block mb-0.5">Holder Name</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. JOHN DOE"
-                            value={panName}
-                            onChange={(e) => setPanName(e.target.value)}
-                            className="w-full rounded-lg bg-zinc-950 px-2 py-1 text-white border border-zinc-900 text-xs focus:outline-none focus:border-[#b76e79]"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[8px] text-zinc-450 uppercase font-semibold block mb-0.5">PAN Card Number</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. ABCDE1234F"
-                            value={panNumber}
-                            onChange={(e) => setPanNumber(e.target.value.toUpperCase())}
-                            className="w-full rounded-lg bg-zinc-950 px-2 py-1 text-white border border-zinc-900 text-xs font-mono focus:outline-none focus:border-[#b76e79]"
-                          />
-                        </div>
+                      <div className="flex justify-between border-b border-zinc-900 pb-2">
+                        <span>Stocks & ETFs (30%)</span>
+                        <span className="font-mono text-white">₹{Math.round(netSavings * 0.3).toLocaleString()}</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Right Column: Advanced AI Configuration */}
-                  <div className="p-5 bg-black border border-[#b76e79]/40 rounded-xl flex flex-col justify-between space-y-4 metallic-card-gold shadow-md">
-                    <div>
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="text-xs font-extrabold uppercase text-[#e5c2c0] tracking-wider flex items-center gap-1">
-                          <Brain className="h-3.5 w-3.5 text-[#b76e79]" /> Advanced AI Planner
-                        </h4>
-                        <span className="text-[8px] bg-[#b76e79]/20 text-[#e5c2c0] px-1.5 py-0.5 rounded font-extrabold uppercase border border-[#b76e79]/30">Advanced API</span>
-                      </div>
-                      <p className="text-[10px] text-zinc-400 leading-relaxed mb-4 font-sans">Integrate your own Google Gemini API key to run continuous simulations matching EPF, NPS, TDS brackets, and gratuity projections.</p>
-                      
-                      <div className="space-y-2">
-                        <label className="text-[10px] text-zinc-400 block font-semibold">Gemini API Key:</label>
+                  <div className="pt-4 border-t border-zinc-900 space-y-3">
+                    <h4 className="text-xs font-bold uppercase text-rose-gold tracking-wider">PAN Details (For CAMS PDF Auto-Decrypt)</h4>
+                    <p className="text-[10px] text-zinc-500 leading-tight">Enable seamless parsing & decryption of CAMS consolidated account statements.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1">
+                      <div>
+                        <label className="text-[8px] text-zinc-450 uppercase font-semibold block mb-0.5">Holder Name</label>
                         <input
-                          type="password"
-                          placeholder="Paste Gemini API Key..."
-                          value={geminiApiKey}
-                          onChange={(e) => setGeminiApiKey(e.target.value)}
-                          className="w-full rounded-lg bg-zinc-950 px-3 py-1.5 text-white border border-zinc-800 text-xs font-mono focus:outline-none focus:border-lime-500 focus:ring-1 focus:ring-lime-500"
+                          type="text"
+                          placeholder="e.g. JOHN DOE"
+                          value={panName}
+                          onChange={(e) => setPanName(e.target.value)}
+                          className="w-full rounded-lg bg-zinc-950 px-2.5 py-1.5 text-white border border-zinc-900 text-xs focus:outline-none focus:border-[#b76e79]"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[8px] text-zinc-450 uppercase font-semibold block mb-0.5">PAN Card Number</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. ABCDE1234F"
+                          value={panNumber}
+                          onChange={(e) => setPanNumber(e.target.value.toUpperCase())}
+                          className="w-full rounded-lg bg-zinc-950 px-2.5 py-1.5 text-white border border-zinc-900 text-xs font-mono focus:outline-none focus:border-[#b76e79]"
                         />
                       </div>
                     </div>
-
-                    <button
-                      onClick={runAiAvenuesAnalysis}
-                      disabled={aiLoading || !geminiApiKey.trim()}
-                      className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-rose-gold text-black font-extrabold hover:opacity-90 text-xs py-2.5 transition-all shadow-lg shadow-[#b76e79]/25 active:scale-[0.98]"
-                    >
-                      <Brain className="h-3.5 w-3.5" />
-                      {aiLoading ? "Simulating Strategy..." : "Analyze with Advanced AI"}
-                    </button>
                   </div>
                 </div>
-
-                {/* AI response panel */}
-                {aiAnalysis && (
-                  <div className="bg-black border border-[#b76e79]/40 p-5 rounded-xl metallic-card-gold shadow-md">
-                    <h4 className="text-xs font-semibold text-[#e5c2c0] flex items-center gap-2 mb-3">
-                      <Brain className="h-4 w-4 text-[#b76e79]" /> Advanced Strategy Projections (Gemini AI Output)
-                    </h4>
-                    <div className="bg-black p-4 rounded-lg border border-zinc-900 whitespace-pre-wrap text-[11px] font-sans text-zinc-300 leading-relaxed max-h-48 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-zinc-850 border-chrome-silver-gradient">
-                      {aiAnalysis}
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Navigation */}
@@ -1605,7 +1561,7 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
         {/* HEADER WITH NAVIGATION */}
         <header className="mb-8 flex flex-col justify-between gap-4 border-b border-zinc-850 pb-6 md:flex-row md:items-center">
           <div className="flex items-center gap-3">
-            <Shield className="h-8 w-8 text-lime-400" />
+            {renderShieldIcon("h-8 w-8")}
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-chrome-silver font-heading">FinancialsOS</h1>
               <div className="flex items-center gap-2 mt-0.5">
@@ -1677,6 +1633,29 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
             >
               <span className="flex items-center gap-1 font-sans">
                 <BarChart3 className="h-4 w-4" /> Analytics
+              </span>
+            </button>
+            {/* Commented out for the current build until Hermes agent with 6-layer memory is integrated */}
+            {/*
+            <button
+              onClick={() => setActiveTab("ai")}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                activeTab === "ai" ? "bg-gradient-to-r from-lime-400 to-lime-500 text-black font-extrabold border border-lime-400 shadow-md shadow-lime-900/10" : "text-zinc-400 hover:text-white"
+              }`}
+            >
+              <span className="flex items-center gap-1 font-sans">
+                <Brain className="h-4 w-4" /> Hermes AI
+              </span>
+            </button>
+            */}
+            <button
+              onClick={() => setActiveTab("settings")}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                activeTab === "settings" ? "bg-gradient-to-r from-lime-400 to-lime-500 text-black font-extrabold border border-lime-400 shadow-md shadow-lime-900/10" : "text-zinc-400 hover:text-white"
+              }`}
+            >
+              <span className="flex items-center gap-1 font-sans">
+                <Settings className="h-4 w-4" /> Settings
               </span>
             </button>
           </div>
@@ -2556,88 +2535,6 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
                     )}
                   </div>
                 </div>
-
-                {/* LOCAL IDENTITY & PAN CARD */}
-                <div className="metallic-card p-6 space-y-4">
-                  <div className="flex justify-between items-start">
-                    <h3 className="text-sm font-bold text-zinc-200 uppercase tracking-wider flex items-center gap-1.5 font-heading">
-                      <User className="h-4 w-4 text-rose-gold" /> Local Identity (PAN)
-                    </h3>
-                  </div>
-                  <p className="text-xs text-zinc-400 leading-relaxed font-sans">Used to automatically decrypt CAMS / NSDL e-CAS Consolidated Account Statement PDFs locally.</p>
-
-                  <div className="space-y-3">
-                    <div>
-                      <label className="text-[10px] text-zinc-450 block font-semibold uppercase">PAN Holder Name</label>
-                      <input
-                        type="text"
-                        placeholder="Enter full name..."
-                        value={panName}
-                        onChange={(e) => setPanName(e.target.value)}
-                        className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs focus:outline-none focus:border-[#b76e79] focus:ring-1 focus:ring-[#b76e79]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] text-zinc-450 block font-semibold uppercase">PAN Number</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. ABCDE1234F"
-                        value={panNumber}
-                        onChange={(e) => setPanNumber(e.target.value.toUpperCase())}
-                        className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs font-mono focus:outline-none focus:border-[#b76e79] focus:ring-1 focus:ring-[#b76e79]"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={async () => {
-                      await saveUserSettings(undefined, undefined, undefined, undefined, undefined, panNumber, panName);
-                      alert("Identity saved successfully.");
-                    }}
-                    className="w-full rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 font-semibold text-xs py-2 transition-all"
-                  >
-                    Save Identity
-                  </button>
-                </div>
-
-                {/* ADVANCED AI TOOL CARD */}
-                <div className="metallic-card-gold p-6 space-y-4 border border-[#b76e79]/35">
-                  <div className="flex justify-between items-start">
-                    <h3 className="text-sm font-bold text-[#e5c2c0] uppercase tracking-wider flex items-center gap-1.5 font-heading">
-                      <Brain className="h-4 w-4 text-[#b76e79]" /> Advanced: AI Strategy
-                    </h3>
-                    <span className="text-[8px] bg-[#b76e79]/15 border border-[#b76e79]/20 text-[#e5c2c0] px-2 py-0.5 rounded font-extrabold uppercase">Advanced</span>
-                  </div>
-                  <p className="text-xs text-zinc-400 leading-relaxed font-sans">Run a continuous calculus analysis of your active ledger and horizon timeline with your personalized Gemini API Key.</p>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] text-zinc-450 block font-semibold">Gemini API Key:</label>
-                    <input
-                      type="password"
-                      placeholder="Paste Gemini API Key..."
-                      value={dashGeminiApiKey}
-                      onChange={(e) => setDashGeminiApiKey(e.target.value)}
-                      className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs font-mono focus:outline-none focus:border-lime-500 focus:ring-1 focus:ring-lime-500"
-                    />
-                  </div>
-
-                  <button
-                    onClick={runDashboardAiAnalysis}
-                    disabled={dashAiLoading || !dashGeminiApiKey.trim()}
-                    className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-rose-gold text-black font-extrabold hover:opacity-90 text-xs py-2.5 transition-all shadow-lg shadow-[#b76e79]/25 active:scale-[0.98]"
-                  >
-                    <Brain className="h-3.5 w-3.5" />
-                    {dashAiLoading ? "Simulating AI Strategy..." : "Query Advanced AI"}
-                  </button>
-
-                  {dashAiAnalysis && (
-                    <div className="mt-3 bg-black p-3 rounded-lg border border-zinc-900 text-[10px] text-zinc-305 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto border-chrome-silver-gradient">
-                      {dashAiAnalysis}
-                    </div>
-                  )}
-                </div>
-
               </div>
 
               {/* MAIN: Budgets and Spending Visualizer */}
@@ -2719,7 +2616,7 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
 
                             {hExpense > 0 && (
                               <path
-                                d={`M 40,${yIncomeTop + hExpense / 2} C 140,${yIncomeTop + hExpense / 2} 140,${yExpenseTop + hExpense / 2} 240,${yExpenseTop + hExpense / 2}`}
+                                  d={`M 40,${yIncomeTop + hExpense / 2} C 140,${yIncomeTop + hExpense / 2} 140,${yExpenseTop + hExpense / 2} 240,${yExpenseTop + hExpense / 2}`}
                                 fill="none"
                                 stroke="url(#gradientExpense)"
                                 strokeWidth={Math.max(1, hExpense)}
@@ -2727,7 +2624,7 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
                             )}
                             {hInvestment > 0 && (
                               <path
-                                d={`M 40,${yIncomeTop + hExpense + hInvestment / 2} C 140,${yIncomeTop + hExpense + hInvestment / 2} 140,${yInvestmentTop + hInvestment / 2} 240,${yInvestmentTop + hInvestment / 2}`}
+                                  d={`M 40,${yIncomeTop + hExpense + hInvestment / 2} C 140,${yIncomeTop + hExpense + hInvestment / 2} 140,${yInvestmentTop + hInvestment / 2} 240,${yInvestmentTop + hInvestment / 2}`}
                                 fill="none"
                                 stroke="url(#gradientInvestment)"
                                 strokeWidth={Math.max(1, hInvestment)}
@@ -2735,7 +2632,7 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
                             )}
                             {hSurplus > 0 && (
                               <path
-                                d={`M 40,${yIncomeTop + hExpense + hInvestment + hSurplus / 2} C 250,${yIncomeTop + hExpense + hInvestment + hSurplus / 2} 250,${ySurplusTop + hSurplus / 2} 460,${ySurplusTop + hSurplus / 2}`}
+                                  d={`M 40,${yIncomeTop + hExpense + hInvestment + hSurplus / 2} C 250,${yIncomeTop + hExpense + hInvestment + hSurplus / 2} 250,${ySurplusTop + hSurplus / 2} 460,${ySurplusTop + hSurplus / 2}`}
                                 fill="none"
                                 stroke="url(#gradientSurplus)"
                                 strokeWidth={Math.max(1, hSurplus)}
@@ -2783,6 +2680,339 @@ Keep it highly analytical, mathematically sound, and formatted cleanly.`
                 })()}
               </div>
             </>
+          )}
+
+          {activeTab === "settings" && (
+            <div className="col-span-1 md:col-span-3 space-y-6">
+              <div className="metallic-card p-6">
+                <h2 className="text-xl font-bold text-zinc-100 flex items-center gap-2 mb-2 font-heading">
+                  ⚙️ System Configurations
+                </h2>
+                <p className="text-xs text-zinc-400 leading-relaxed mb-6 font-sans">
+                  Tune the underlying calculus Horizon variables, Safe Withdrawal Rate (SWR), and local Identity credentials.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Horizon Calculus Engine Constants */}
+                  <div className="p-5 bg-black/40 rounded-xl border border-zinc-805 space-y-4">
+                    <h3 className="text-xs font-bold uppercase text-rose-gold tracking-wider border-b border-zinc-900 pb-2">
+                      Horizon Calculus Engine
+                    </h3>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] text-zinc-450 uppercase font-semibold block mb-1">Inflation Rate (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={(inflationRate * 100).toFixed(1)}
+                          onChange={(e) => setInflationRate(parseFloat(e.target.value) / 100 || 0)}
+                          className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs focus:outline-none focus:border-[#b76e79]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-zinc-450 uppercase font-semibold block mb-1">Nominal CAGR (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={(nominalCagr * 100).toFixed(1)}
+                          onChange={(e) => setNominalCagr(parseFloat(e.target.value) / 100 || 0)}
+                          className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs focus:outline-none focus:border-[#b76e79]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-zinc-450 uppercase font-semibold block mb-1">Step-Up Rate (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={(stepUpRate * 100).toFixed(1)}
+                          onChange={(e) => setStepUpRate(parseFloat(e.target.value) / 100 || 0)}
+                          className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs focus:outline-none focus:border-[#b76e79]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-zinc-450 uppercase font-semibold block mb-1">Safe Withdrawal Rate (SWR %)</label>
+                        <input
+                          type="number"
+                          step="0.05"
+                          value={(swr * 100).toFixed(2)}
+                          onChange={(e) => setSwr(parseFloat(e.target.value) / 100 || 0)}
+                          className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs focus:outline-none focus:border-[#b76e79]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Local Identity & Visual Theme */}
+                  <div className="p-5 bg-black/40 rounded-xl border border-zinc-805 space-y-4 flex flex-col justify-between">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase text-rose-gold tracking-wider border-b border-zinc-900 pb-2 mb-3">
+                        Local Identity & Appearance
+                      </h3>
+                      
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-[10px] text-zinc-450 uppercase font-semibold block mb-1">PAN Holder Name</label>
+                          <input
+                            type="text"
+                            placeholder="Enter name..."
+                            value={panName}
+                            onChange={(e) => setPanName(e.target.value)}
+                            className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs focus:outline-none focus:border-[#b76e79]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] text-zinc-450 uppercase font-semibold block mb-1">PAN Number (For CAS Auto-Decrypt)</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. ABCDE1234F"
+                            value={panNumber}
+                            onChange={(e) => setPanNumber(e.target.value.toUpperCase())}
+                            className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs font-mono focus:outline-none focus:border-[#b76e79]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] text-zinc-450 uppercase font-semibold block mb-1">Visual Theme</label>
+                          <div className="grid grid-cols-2 gap-2 mt-1">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setTheme("dark");
+                                await saveUserSettings(undefined, undefined, undefined, undefined, undefined, undefined, undefined, "dark");
+                              }}
+                              className={`flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-lg transition-all ${
+                                theme === "dark" ? "bg-zinc-800 border border-[#b76e79] text-white" : "bg-black border border-zinc-850 text-zinc-400 hover:text-white"
+                              }`}
+                            >
+                              <Moon className="h-3.5 w-3.5 text-indigo-400" /> Metallic Dark
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setTheme("light");
+                                await saveUserSettings(undefined, undefined, undefined, undefined, undefined, undefined, undefined, "light");
+                              }}
+                              className={`flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-lg transition-all ${
+                                theme === "light" ? "bg-zinc-200 border border-indigo-500 text-black" : "bg-black border border-zinc-850 text-zinc-400 hover:text-white"
+                              }`}
+                            >
+                              <Sun className="h-3.5 w-3.5 text-amber-500" /> Alabaster Light
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Hermes AI Configuration Card */}
+                <div className="mt-6 p-5 bg-black/40 rounded-xl border border-zinc-805 space-y-4">
+                  <h3 className="text-xs font-bold uppercase text-rose-gold tracking-wider border-b border-zinc-900 pb-2 flex items-center justify-between">
+                    <span>🤖 Hermes AI Engine Configuration</span>
+                    <span className="text-[9px] bg-[#b76e79]/15 border border-[#b76e79]/20 text-[#e5c2c0] px-2.5 py-1 rounded font-extrabold uppercase font-mono">
+                      Hermes Agent Sandbox Configs
+                    </span>
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Key and Instruction */}
+                    <div className="lg:col-span-2 space-y-4">
+                      <div>
+                        <label className="text-[10px] text-zinc-450 uppercase font-semibold block mb-1">Gemini API Key</label>
+                        <input
+                          type="password"
+                          placeholder="Paste Gemini API Key..."
+                          value={geminiApiKey}
+                          onChange={(e) => setGeminiApiKey(e.target.value)}
+                          className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs font-mono focus:outline-none focus:border-[#b76e79]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-zinc-450 uppercase font-semibold block mb-1">System Instruction (Persona)</label>
+                        <textarea
+                          rows={4}
+                          value={systemInstruction}
+                          onChange={(e) => setSystemInstruction(e.target.value)}
+                          className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs leading-relaxed focus:outline-none focus:border-[#b76e79]"
+                          placeholder="You are an expert financial advisor..."
+                        />
+                      </div>
+                    </div>
+
+                    {/* Placeholders helper panel */}
+                    <div className="lg:col-span-1 p-4 bg-black/20 rounded-xl border border-zinc-805 text-[10px] text-zinc-450 space-y-1.5 leading-relaxed font-mono">
+                      <div className="font-bold text-rose-gold text-xs font-sans mb-1 uppercase tracking-wider">Dynamic Placeholders</div>
+                      <div>Use these tags in your prompt template to auto-inject values:</div>
+                      <div><strong className="text-zinc-200">{`{username}`}</strong> - Active vault user</div>
+                      <div><strong className="text-zinc-200">{`{portfolio}`}</strong> - Current net worth</div>
+                      <div><strong className="text-zinc-200">{`{lifestyle}`}</strong> - Annual lifestyle cost</div>
+                      <div><strong className="text-zinc-200">{`{years}`}</strong> - Horizon timeline years</div>
+                      <div><strong className="text-zinc-200">{`{inflation}`}</strong> - Inflation rate %</div>
+                      <div><strong className="text-zinc-200">{`{cagr}`}</strong> - Expected CAGR %</div>
+                      <div><strong className="text-zinc-200">{`{swr}`}</strong> - Safe withdrawal %</div>
+                      <div><strong className="text-zinc-200">{`{income}`}</strong> - Total cataloged income</div>
+                      <div><strong className="text-zinc-200">{`{expenses}`}</strong> - Total cataloged expenses</div>
+                      <div><strong className="text-zinc-200">{`{target}`}</strong> - Target FIRE net worth</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-zinc-450 uppercase font-semibold block mb-1">Custom Prompt Template</label>
+                    <textarea
+                      rows={6}
+                      value={customPrompt}
+                      onChange={(e) => setCustomPrompt(e.target.value)}
+                      className="w-full rounded-lg bg-black px-3 py-2 text-white border border-zinc-800 text-xs font-mono leading-relaxed focus:outline-none focus:border-[#b76e79]"
+                      placeholder="Describe how to model the financial scenario..."
+                    />
+                  </div>
+                </div>
+
+                {/* Universal Save Button */}
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={async () => {
+                      await saveUserSettings();
+                      alert("Settings updated and stored in Chrome-Silver relational schema.");
+                    }}
+                    className="w-full md:w-auto px-8 rounded-lg bg-gradient-to-r from-lime-400 to-lime-500 hover:from-lime-300 hover:to-lime-450 text-black font-extrabold text-xs py-3.5 transition-all active:scale-[0.98] border border-lime-400"
+                  >
+                    Save All Configurations
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "ai" && (
+            <div className="col-span-1 md:col-span-3 space-y-6">
+              <div className="metallic-card p-6">
+                <div className="flex justify-between items-start border-b border-zinc-850 pb-3 mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-zinc-100 flex items-center gap-2 mb-1 font-heading">
+                      🤖 Hermes AI Sandbox
+                    </h2>
+                    <p className="text-xs text-zinc-400 leading-relaxed font-sans">
+                      Isolated playground running Gemini API models with custom system instructions and dynamic prompt template injection.
+                    </p>
+                  </div>
+                  <span className="text-[10px] bg-[#b76e79]/15 border border-[#b76e79]/20 text-[#e5c2c0] px-2.5 py-1 rounded font-extrabold uppercase font-mono">
+                    Hermes Agent v0.1.4
+                  </span>
+                </div>
+
+                {/* Info Alert for Hermes Memory Layer */}
+                <div className="bg-indigo-500/10 border border-indigo-500/30 p-4 rounded-xl mb-6 text-xs text-indigo-300 leading-relaxed">
+                  <strong>Memory Layer Integration Note:</strong> Complete integration of the Hermes AI Agent with a 6-layer memory layout is scheduled for future release. The sandbox below exposes customizable system instructions and dynamic placeholder bindings to run simulations today.
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Left Column: API configurations */}
+                  <div className="lg:col-span-1 space-y-4">
+                    <div className="p-5 bg-black/40 rounded-xl border border-zinc-805 space-y-4">
+                      <h3 className="text-xs font-bold uppercase text-rose-gold tracking-wider border-b border-zinc-900 pb-2">
+                        API Configurations
+                      </h3>
+
+                      <div>
+                        <label className="text-[10px] text-zinc-400 block font-semibold mb-1">Gemini API Key:</label>
+                        <input
+                          type="password"
+                          placeholder="Paste Gemini API Key..."
+                          value={geminiApiKey}
+                          onChange={(e) => setGeminiApiKey(e.target.value)}
+                          className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs font-mono focus:outline-none focus:border-lime-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-zinc-400 block font-semibold mb-1">System Instruction (Persona):</label>
+                        <textarea
+                          rows={4}
+                          value={systemInstruction}
+                          onChange={(e) => setSystemInstruction(e.target.value)}
+                          className="w-full rounded-lg bg-black px-3 py-1.5 text-white border border-zinc-800 text-xs leading-relaxed focus:outline-none focus:border-lime-500"
+                          placeholder="You are an expert financial advisor..."
+                        />
+                      </div>
+
+                      <button
+                        onClick={async () => {
+                          await saveUserSettings(geminiApiKey, undefined, undefined, undefined, undefined, undefined, undefined, undefined, systemInstruction, customPrompt);
+                          alert("AI configurations saved successfully.");
+                        }}
+                        className="w-full rounded-lg bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 text-zinc-200 font-semibold text-xs py-2 transition-all"
+                      >
+                        Save AI Configs
+                      </button>
+                    </div>
+
+                    <div className="p-4 bg-black/20 rounded-xl border border-zinc-805 text-[10px] text-zinc-400 space-y-1.5 leading-relaxed font-mono">
+                      <div className="font-bold text-rose-gold text-xs font-sans mb-1 uppercase tracking-wider">Dynamic Placeholders</div>
+                      <div>Use these tags in your prompt template:</div>
+                      <div><strong className="text-zinc-200">{`{username}`}</strong> - Active vault user</div>
+                      <div><strong className="text-zinc-200">{`{portfolio}`}</strong> - Current net worth</div>
+                      <div><strong className="text-zinc-200">{`{lifestyle}`}</strong> - Annual lifestyle cost</div>
+                      <div><strong className="text-zinc-200">{`{years}`}</strong> - Horizon timeline years</div>
+                      <div><strong className="text-zinc-200">{`{inflation}`}</strong> - Inflation rate %</div>
+                      <div><strong className="text-zinc-200">{`{cagr}`}</strong> - Expected CAGR %</div>
+                      <div><strong className="text-zinc-200">{`{swr}`}</strong> - Safe withdrawal %</div>
+                      <div><strong className="text-zinc-200">{`{income}`}</strong> - Total cataloged income</div>
+                      <div><strong className="text-zinc-200">{`{expenses}`}</strong> - Total cataloged expenses</div>
+                      <div><strong className="text-zinc-200">{`{target}`}</strong> - Target FIRE net worth</div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Prompt templates & AI Sandbox runner */}
+                  <div className="lg:col-span-2 space-y-4">
+                    <div className="p-5 bg-black/40 rounded-xl border border-zinc-805 space-y-4 flex flex-col justify-between h-full">
+                      <div className="space-y-4">
+                        <h3 className="text-xs font-bold uppercase text-rose-gold tracking-wider border-b border-zinc-900 pb-2">
+                          Custom Prompt Template
+                        </h3>
+
+                        <div>
+                          <textarea
+                            rows={8}
+                            value={customPrompt}
+                            onChange={(e) => setCustomPrompt(e.target.value)}
+                            className="w-full rounded-lg bg-black px-3 py-2 text-white border border-zinc-800 text-xs font-mono leading-relaxed focus:outline-none focus:border-lime-500"
+                            placeholder="Describe how to model the financial scenario..."
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={runCustomAiAnalysis}
+                        disabled={aiLoading || !geminiApiKey.trim()}
+                        className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-rose-gold text-black font-extrabold hover:opacity-90 text-xs py-3 transition-all shadow-lg active:scale-[0.98]"
+                      >
+                        <Brain className="h-4 w-4" />
+                        {aiLoading ? "Simulating Scenario..." : "Execute AI Sandbox Engine"}
+                      </button>
+                    </div>
+
+                    {/* AI Output Panel */}
+                    {aiAnalysis && (
+                      <div className="metallic-card-gold p-5 border border-[#b76e79]/35 space-y-3">
+                        <h4 className="text-xs font-bold text-[#e5c2c0] uppercase tracking-wider flex items-center gap-2">
+                          <Brain className="h-4 w-4 text-[#b76e79]" /> Sandbox Output Report
+                        </h4>
+                        <div className="bg-black/60 p-4 rounded-lg border border-zinc-900 whitespace-pre-wrap text-[11px] font-sans text-zinc-200 leading-relaxed max-h-96 overflow-y-auto pr-1 scrollbar-thin border-chrome-silver-gradient">
+                          {aiAnalysis}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
 
         </div>

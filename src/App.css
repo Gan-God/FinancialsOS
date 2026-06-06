@@ -68,117 +68,221 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   border-radius: 16px;
 }
 
-/* Light Mode styling overrides */
+/* Light Mode styling overrides using Color Theory (Base RGB primary hues, triadic accents, and analogous text/gradients) */
 .light-mode {
   color-scheme: light;
 }
 
 .light-mode body {
-  background-color: #f8f8fa;
-  color: #18181b;
+  background-color: hsl(215, 40%, 97%) !important;
+  color: hsl(215, 35%, 15%) !important;
 }
 
 .light-mode .metallic-bg {
-  background-color: #f8f8fa;
+  background-color: hsl(215, 40%, 97%) !important;
   background-image: 
-    radial-gradient(at 50% 0%, rgba(163, 230, 53, 0.06) 0px, transparent 55%),
-    linear-gradient(rgba(24, 24, 27, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(24, 24, 27, 0.02) 1px, transparent 1px);
+    radial-gradient(at 50% 0%, hsla(215, 80%, 45%, 0.04) 0px, transparent 55%),
+    linear-gradient(rgba(15, 23, 42, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.015) 1px, transparent 1px) !important;
 }
 
+/* Analogous text color mappings to keep elements highly readable and contrast-rich */
 .light-mode .text-white {
-  color: #18181b !important;
+  color: hsl(215, 35%, 15%) !important;
 }
 
 .light-mode .text-zinc-100 {
-  color: #18181b !important;
+  color: hsl(215, 35%, 15%) !important;
 }
 
 .light-mode .text-zinc-200 {
-  color: #18181b !important;
+  color: hsl(215, 30%, 18%) !important;
 }
 
 .light-mode .text-zinc-300 {
-  color: #27272a !important;
+  color: hsl(215, 20%, 25%) !important;
 }
 
 .light-mode .text-zinc-400 {
-  color: #3f3f46 !important;
-}
-
-.light-mode .text-zinc-500 {
-  color: #52525b !important;
+  color: hsl(215, 20%, 35%) !important;
 }
 
 .light-mode .text-zinc-450 {
-  color: #4b5563 !important;
+  color: hsl(215, 18%, 40%) !important;
 }
 
-.light-mode .text-zinc-600 {
-  color: #71717a !important;
+.light-mode .text-zinc-500 {
+  color: hsl(215, 15%, 45%) !important;
 }
 
 .light-mode .text-zinc-550 {
-  color: #71717a !important;
+  color: hsl(215, 15%, 45%) !important;
 }
 
+.light-mode .text-zinc-600 {
+  color: hsl(215, 15%, 52%) !important;
+}
+
+.light-mode .text-zinc-650 {
+  color: hsl(215, 15%, 52%) !important;
+}
+
+/* Triadic Accents (Red: Hue 350, Green: Hue 125, Blue: Hue 215) and others */
+.light-mode .text-lime-400,
+.light-mode .text-lime-450,
+.light-mode .text-lime-500,
+.light-mode .text-lime-600 {
+  color: hsl(125, 65%, 35%) !important;
+}
+
+.light-mode .text-amber-400,
+.light-mode .text-amber-500 {
+  color: hsl(35, 90%, 40%) !important;
+}
+
+.light-mode .text-orange-400 {
+  color: hsl(20, 85%, 45%) !important;
+}
+
+.light-mode .text-red-500 {
+  color: hsl(350, 65%, 45%) !important;
+}
+
+.light-mode .text-indigo-400,
+.light-mode .text-indigo-500 {
+  color: hsl(215, 80%, 45%) !important;
+}
+
+.light-mode .text-\[\#e5c2c0\] {
+  color: hsl(350, 50%, 30%) !important;
+}
+
+.light-mode .text-\[\#b76e79\] {
+  color: hsl(350, 60%, 40%) !important;
+}
+
+/* Background overrides for tabs, grids, and dialogs */
 .light-mode .bg-black {
-  background-color: #ffffff !important;
+  background-color: hsl(215, 30%, 97%) !important;
 }
 
 .light-mode .bg-zinc-950 {
-  background-color: #f4f4f5 !important;
+  background-color: hsl(215, 20%, 92%) !important;
 }
 
 .light-mode .bg-zinc-900 {
-  background-color: #e4e4e7 !important;
+  background-color: hsl(215, 20%, 88%) !important;
 }
 
 .light-mode .border-zinc-800 {
-  border-color: #e4e4e7 !important;
+  border-color: hsl(215, 20%, 86%) !important;
 }
 
 .light-mode .border-zinc-900 {
-  border-color: #d4d4d8 !important;
+  border-color: hsl(215, 20%, 84%) !important;
 }
 
 .light-mode .border-zinc-850 {
-  border-color: #e4e4e7 !important;
+  border-color: hsl(215, 20%, 86%) !important;
 }
 
+.light-mode .bg-\[\#b76e79\]\/10,
+.light-mode .bg-\[\#b76e79\]\/15,
+.light-mode .bg-\[\#b76e79\]\/20 {
+  background-color: hsl(350, 40%, 92%) !important;
+}
+
+.light-mode .border-\[\#b76e79\]\/20,
+.light-mode .border-\[\#b76e79\]\/30,
+.light-mode .border-\[\#b76e79\]\/35,
+.light-mode .border-\[\#b76e79\]\/40 {
+  border-color: hsl(350, 40%, 82%) !important;
+}
+
+/* Premium Light Mode Analogous Cards */
 .light-mode .metallic-card {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(250, 250, 250, 0.99) 100%);
-  border: 1px solid rgba(183, 110, 121, 0.15); /* subtle warm gold border */
-  box-shadow: 0 8px 32px 0 rgba(24, 24, 27, 0.06), inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+  background: linear-gradient(135deg, hsl(215, 30%, 99%) 0%, hsl(215, 20%, 96%) 100%) !important;
+  border: 1px solid hsl(215, 25%, 88%) !important;
+  box-shadow: 0 8px 32px 0 rgba(15, 23, 42, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 0.9) !important;
   backdrop-filter: blur(12px);
-  color: #18181b !important;
+  color: hsl(215, 35%, 15%) !important;
 }
 
 .light-mode .metallic-card-gold {
-  background: linear-gradient(135deg, rgba(253, 250, 251, 0.95) 0%, rgba(255, 255, 255, 0.99) 100%);
-  border: 1px solid rgba(183, 110, 121, 0.35); /* subtle rose-gold border */
-  box-shadow: 0 8px 32px 0 rgba(24, 24, 27, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+  background: linear-gradient(135deg, hsl(350, 25%, 99%) 0%, hsl(350, 15%, 96%) 100%) !important;
+  border: 1px solid hsl(350, 30%, 88%) !important;
+  box-shadow: 0 8px 32px 0 rgba(15, 23, 42, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 0.9) !important;
   backdrop-filter: blur(12px);
-  color: #18181b !important;
+  color: hsl(215, 35%, 15%) !important;
 }
 
+/* Chromatic Metallic Gradients adapted for Light Theme */
 .light-mode .text-chrome-silver {
-  background: linear-gradient(135deg, #18181b 0%, #3f3f46 50%, #71717a 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  background: linear-gradient(135deg, hsl(215, 45%, 12%) 0%, hsl(215, 25%, 30%) 50%, hsl(215, 20%, 45%) 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
 }
 
-.light-mode input, .light-mode select, .light-mode textarea {
-  color: #18181b !important;
-  background-color: #ffffff !important;
-  border-color: #d4d4d8 !important;
+.light-mode .text-rose-gold {
+  background: linear-gradient(135deg, hsl(350, 60%, 25%) 0%, hsl(350, 45%, 40%) 50%, hsl(350, 40%, 55%) 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
 }
 
-.light-mode input::placeholder, .light-mode textarea::placeholder {
-  color: #a1a1aa !important;
+.light-mode .bg-chrome-silver {
+  background: linear-gradient(135deg, hsl(215, 30%, 98%) 0%, hsl(215, 20%, 90%) 100%) !important;
+  color: hsl(215, 45%, 12%) !important;
+  border: 1px solid hsl(215, 25%, 80%) !important;
 }
 
-.light-mode input:focus, .light-mode select:focus, .light-mode textarea:focus {
-  border-color: #b76e79 !important;
-  box-shadow: 0 0 0 1px #b76e79 !important;
+.light-mode .bg-rose-gold {
+  background: linear-gradient(135deg, hsl(350, 35%, 96%) 0%, hsl(350, 30%, 85%) 100%) !important;
+  color: hsl(350, 50%, 15%) !important;
+  border: 1px solid hsl(350, 25%, 78%) !important;
+}
+
+/* Light inputs, dropdowns and forms */
+.light-mode input, 
+.light-mode select, 
+.light-mode textarea {
+  color: hsl(215, 35%, 15%) !important;
+  background-color: hsl(215, 30%, 100%) !important;
+  border-color: hsl(215, 20%, 82%) !important;
+}
+
+.light-mode input::placeholder, 
+.light-mode textarea::placeholder {
+  color: hsl(215, 15%, 60%) !important;
+}
+
+.light-mode input:focus, 
+.light-mode select:focus, 
+.light-mode textarea:focus {
+  border-color: hsl(215, 80%, 45%) !important;
+  box-shadow: 0 0 0 1px hsl(215, 80%, 45%) !important;
+}
+
+/* SVG Chart adjustments for text visibility */
+.light-mode svg text {
+  fill: hsl(215, 30%, 25%) !important;
+}
+
+.light-mode svg text[fill="#e5c2c0"] {
+  fill: hsl(350, 60%, 40%) !important;
+}
+
+.light-mode svg text[fill="#a1a1aa"] {
+  fill: hsl(215, 20%, 40%) !important;
+}
+
+.light-mode svg text[fill="#71717a"] {
+  fill: hsl(215, 20%, 45%) !important;
+}
+
+.light-mode svg text[fill="#a3e635"] {
+  fill: hsl(125, 65%, 35%) !important;
+}
+
+.light-mode .recharts-cartesian-axis-tick text {
+  fill: hsl(215, 20%, 40%) !important;
 }
